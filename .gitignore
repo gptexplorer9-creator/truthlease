@@ -1,0 +1,11 @@
+node_modules/
+dist/
+public/ui/
+runtime/
+.vercel/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db

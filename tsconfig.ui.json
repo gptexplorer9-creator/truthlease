@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "public/ui",
+    "rootDir": "src/ui"
+  },
+  "include": ["src/ui/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test"]
+}
