@@ -11,8 +11,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "rootDir": ".",
-    "types": ["node"]
+    "rootDir": "."
   },
   "include": ["server.ts", "src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"]
 }
