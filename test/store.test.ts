@@ -115,6 +115,18 @@ describe("RetailerStore", () => {
     ).rejects.toThrow(/batch code/i);
   });
 
+  it("returns a complete NOT VERIFIED result for an unknown patch", async () => {
+    const store = await testStore();
+    await store.reset();
+
+    const verification = await store.verifyContainment("PATCH-UNKNOWN");
+
+    expect(verification.verdict).toBe("NOT VERIFIED");
+    expect(verification.passed).toBe(false);
+    expect(verification.checks).toHaveLength(7);
+    expect(verification.checks.every((check) => check.passed === false)).toBe(true);
+  });
+
   it("writes valid JSON atomically", async () => {
     const directory = await mkdtemp(join(tmpdir(), "truthlease-json-"));
     const path = join(directory, "state.json");

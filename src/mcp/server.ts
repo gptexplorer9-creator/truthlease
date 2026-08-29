@@ -6,6 +6,11 @@ import { z } from "zod";
 
 import { publicState, RetailerStore } from "../infra/store.js";
 import { buildCaseEventFeed, fetchTrueForgeEvents } from "../trueforge/case-feed.js";
+import {
+  RejectingTrustGate,
+  TrueForgeSessionTrustGate,
+  type TruthLeaseMcpTrustGate,
+} from "../trueforge/trust-gate.js";
 
 function jsonResult(value: unknown) {
   const text = JSON.stringify(value, null, 2);
@@ -27,7 +32,10 @@ function errorResult(error: unknown) {
   };
 }
 
-export function createTruthLeaseMcpServer(store: RetailerStore): McpServer {
+export function createTruthLeaseMcpServer(
+  store: RetailerStore,
+  trustGate: TruthLeaseMcpTrustGate = new RejectingTrustGate(),
+): McpServer {
   const server = new McpServer({ name: "truthlease", version: "0.1.0" });
 
   server.registerTool(
@@ -35,7 +43,7 @@ export function createTruthLeaseMcpServer(store: RetailerStore): McpServer {
     {
       title: "Record Bright Data CPSC evidence",
       description:
-        "Validate and persist a fresh official CPSC recall page retrieved through the Bright Data MCP. TruthLease computes the evidence SHA-256; this tool does not fetch the web.",
+        "Persist fresh official CPSC recall evidence only when the server can bind this exact request to the configured TrueForge session's canonical Bright Data trace. TruthLease computes the evidence SHA-256.",
       inputSchema: {
         source_url: z.string().url(),
         retrieved_at: z.string().datetime({ offset: true }),
@@ -70,21 +78,21 @@ export function createTruthLeaseMcpServer(store: RetailerStore): McpServer {
       evidence_text,
     }) => {
       try {
-        return jsonResult(
-          await store.recordRecallEvidence({
-            sourceUrl: source_url,
-            retrievedAt: retrieved_at,
-            recallNumber: recall_number,
-            title,
-            productName: product_name,
-            recallDate: recall_date,
-            hazard,
-            description,
-            itemNumber: item_number,
-            batchCode: batch_code,
-            evidenceText: evidence_text,
-          }),
-        );
+        const input = {
+          sourceUrl: source_url,
+          retrievedAt: retrieved_at,
+          recallNumber: recall_number,
+          title,
+          productName: product_name,
+          recallDate: recall_date,
+          hazard,
+          description,
+          itemNumber: item_number,
+          batchCode: batch_code,
+          evidenceText: evidence_text,
+        };
+        await trustGate.authorizeEvidence(input);
+        return jsonResult(await store.recordRecallEvidence(input));
       } catch (error) {
         return errorResult(error);
       }
@@ -153,6 +161,7 @@ export function createTruthLeaseMcpServer(store: RetailerStore): McpServer {
     },
     async (input) => {
       try {
+        await trustGate.authorizeMutation(input);
         return jsonResult(await store.applyContainmentPatch(input));
       } catch (error) {
         return errorResult(error);
@@ -185,6 +194,7 @@ export interface AppOptions {
   trueForgeBaseUrl?: string;
   trueForgeSessionId?: string;
   hostedReadOnly?: boolean;
+  trustGate?: TruthLeaseMcpTrustGate;
 }
 
 export function createApp(store: RetailerStore, options: AppOptions = {}) {
@@ -193,6 +203,11 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
   const trueForgeBaseUrl = options.trueForgeBaseUrl ?? process.env.TRUTHLEASE_TRUEFORGE_URL ?? "http://127.0.0.1:8790";
   const trueForgeSessionId = options.trueForgeSessionId ?? process.env.TRUTHLEASE_TRUEFORGE_SESSION_ID;
   const hostedReadOnly = options.hostedReadOnly ?? false;
+  const trustGate = options.trustGate ?? (
+    trueForgeSessionId === undefined || trueForgeSessionId.trim().length === 0
+      ? new RejectingTrustGate()
+      : new TrueForgeSessionTrustGate(trueForgeBaseUrl, trueForgeSessionId)
+  );
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
   app.use((request, response, next) => {
@@ -275,7 +290,7 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
       });
       return;
     }
-    const server = createTruthLeaseMcpServer(store);
+    const server = createTruthLeaseMcpServer(store, trustGate);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

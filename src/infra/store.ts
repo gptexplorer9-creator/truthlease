@@ -256,8 +256,9 @@ export class RetailerStore {
       {
         name: "audit receipt is bound to persisted Bright Data evidence",
         passed:
+          receipt !== undefined &&
           evidence !== undefined &&
-          receipt?.evidenceSha256 === evidence.contentSha256 &&
+          receipt.evidenceSha256 === evidence.contentSha256 &&
           receipt.analysisSha256.length === 64,
         observed: evidence === undefined
           ? null

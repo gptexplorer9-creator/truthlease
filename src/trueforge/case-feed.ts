@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 
-import type { RunEvent, RunEventType } from "../domain/types.js";
+import type {
+  ApplyContainmentPatchArguments,
+  RecordRecallEvidenceInput,
+  RunEvent,
+  RunEventType,
+} from "../domain/types.js";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -36,6 +41,35 @@ interface ToolCallRecord {
   serverName?: string;
   event: UnknownRecord;
 }
+
+interface IndexedToolCall extends ToolCallRecord {
+  eventIndex: number;
+}
+
+interface IndexedEvent {
+  event: UnknownRecord;
+  eventIndex: number;
+}
+
+interface EvidenceTrace {
+  scrape: IndexedToolCall;
+  scrapeResponse: IndexedEvent;
+  search: IndexedToolCall;
+  searchResponse: IndexedEvent;
+  recordEvidence: IndexedToolCall;
+  input: RecordRecallEvidenceInput;
+}
+
+export interface TrueForgeAuthorizationProof {
+  callId: string;
+  authorizedAt: string;
+}
+
+export const P0_CPSC_RECALL_URL =
+  "https://www.cpsc.gov/Recalls/2026/HABA-USA-Recalls-Rainbow-Rattle-Grasping-and-Teething-Toys-Due-to-Risk-of-Serious-Injury-or-Death-from-Choking-and-Ingestion-Hazards";
+
+export const P0_CPSC_FALLBACK_QUERY =
+  'site:cpsc.gov/Recalls/2026 "26-719" "2012261001" "0925" HABA Rainbow Rattle';
 
 function record(value: unknown): UnknownRecord | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -81,6 +115,233 @@ function parseArguments(value: unknown): UnknownRecord {
   return parseJsonObject(value) ?? {};
 }
 
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const object = record(value);
+  if (object !== undefined) {
+    return `{${Object.keys(object).sort().map((key) =>
+      `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function equalJson(left: unknown, right: unknown): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function normalizedEvidenceText(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function emptyExternalPayload(event: UnknownRecord): boolean {
+  const content = string(event.content) ?? "";
+  const begin = content.indexOf("_BEGIN=====");
+  const end = content.lastIndexOf("=====UNTRUSTED_");
+  const payload = begin >= 0 && end > begin
+    ? content.slice(begin + "_BEGIN=====".length, end).trim()
+    : content.trim();
+  return payload.length === 0;
+}
+
+function recordEvidenceInput(arguments_: UnknownRecord): RecordRecallEvidenceInput | undefined {
+  const sourceUrl = string(arguments_.source_url);
+  const retrievedAt = string(arguments_.retrieved_at);
+  const recallNumber = string(arguments_.recall_number);
+  const title = string(arguments_.title);
+  const productName = string(arguments_.product_name);
+  const recallDate = string(arguments_.recall_date);
+  const hazard = string(arguments_.hazard);
+  const description = string(arguments_.description);
+  const itemNumber = string(arguments_.item_number);
+  const batchCode = string(arguments_.batch_code);
+  const evidenceText = string(arguments_.evidence_text);
+  if (
+    sourceUrl === undefined || retrievedAt === undefined || recallNumber === undefined ||
+    title === undefined || productName === undefined || recallDate === undefined ||
+    hazard === undefined || description === undefined || itemNumber === undefined ||
+    batchCode === undefined || evidenceText === undefined
+  ) return undefined;
+  return {
+    sourceUrl,
+    retrievedAt,
+    recallNumber,
+    title,
+    productName,
+    recallDate,
+    hazard,
+    description,
+    itemNumber,
+    batchCode,
+    evidenceText,
+  };
+}
+
+function evidenceInputToWire(input: RecordRecallEvidenceInput): UnknownRecord {
+  return {
+    source_url: input.sourceUrl,
+    retrieved_at: input.retrievedAt,
+    recall_number: input.recallNumber,
+    title: input.title,
+    product_name: input.productName,
+    recall_date: input.recallDate,
+    hazard: input.hazard,
+    description: input.description,
+    item_number: input.itemNumber,
+    batch_code: input.batchCode,
+    evidence_text: input.evidenceText,
+  };
+}
+
+function orderedTrace(entries: TrueForgeEventEntry[]): {
+  ordered: TrueForgeEventEntry[];
+  calls: IndexedToolCall[];
+  responses: Map<string, IndexedEvent>;
+} {
+  const ordered = [...entries].sort((left, right) => {
+    const byTime = Date.parse(createdAt(left.event)) - Date.parse(createdAt(right.event));
+    return byTime !== 0 ? byTime : String(left.event.id).localeCompare(String(right.event.id));
+  });
+  const calls = ordered.flatMap(({ event }, eventIndex) =>
+    toolCallsFrom(event).map((call) => ({ ...call, eventIndex })),
+  );
+  const responses = new Map<string, IndexedEvent>();
+  ordered.forEach(({ event }, eventIndex) => {
+    if (event.type !== "tool.response") return;
+    const callId = string(event.tool_call_id);
+    if (callId !== undefined) responses.set(callId, { event, eventIndex });
+  });
+  return { ordered, calls, responses };
+}
+
+function evidenceMetadataIsBound(input: RecordRecallEvidenceInput, searchPayload: UnknownRecord): boolean {
+  const organic = array(searchPayload.organic).map(record).find((item) =>
+    string(item?.link) === P0_CPSC_RECALL_URL,
+  );
+  if (
+    organic === undefined ||
+    string(organic.title) !== input.title ||
+    string(organic.description) !== input.description
+  ) return false;
+  const submittedPayload = parseJsonObject(input.evidenceText);
+  if (submittedPayload === undefined || !equalJson(submittedPayload, searchPayload)) return false;
+  const boundText = normalizedEvidenceText(
+    `${JSON.stringify(searchPayload)} ${P0_CPSC_RECALL_URL.replace(/[-_/]/g, " ")}`,
+  );
+  return [
+    input.recallNumber,
+    input.productName,
+    input.recallDate,
+    input.hazard,
+    input.itemNumber,
+    input.batchCode,
+  ].every((value) => boundText.includes(normalizedEvidenceText(value)));
+}
+
+function findEvidenceTrace(
+  entries: TrueForgeEventEntry[],
+  expectedInput?: RecordRecallEvidenceInput,
+  excludedCallIds: ReadonlySet<string> = new Set(),
+): EvidenceTrace | undefined {
+  const { calls, responses } = orderedTrace(entries);
+  const records = calls.filter((call) =>
+    call.name === "record_recall_evidence" &&
+    call.serverName === "truthlease-local" &&
+    !excludedCallIds.has(call.id),
+  );
+  for (const recordCall of records) {
+    const input = recordEvidenceInput(recordCall.arguments);
+    if (
+      input === undefined ||
+      input.sourceUrl !== P0_CPSC_RECALL_URL ||
+      (expectedInput !== undefined && !equalJson(recordCall.arguments, evidenceInputToWire(expectedInput)))
+    ) continue;
+    const scrape = calls.find((call) =>
+      call.serverName === "bright-data" &&
+      call.name === "scrape_as_markdown" &&
+      call.arguments.url === P0_CPSC_RECALL_URL &&
+      call.eventIndex < recordCall.eventIndex,
+    );
+    const scrapeResponse = scrape === undefined ? undefined : responses.get(scrape.id);
+    const search = calls.find((call) =>
+      call.serverName === "bright-data" &&
+      call.name === "search_engine" &&
+      call.arguments.query === P0_CPSC_FALLBACK_QUERY &&
+      call.arguments.engine === "google" &&
+      call.arguments.geo_location === "us" &&
+      call.arguments.cursor === "" &&
+      call.eventIndex < recordCall.eventIndex,
+    );
+    const searchResponse = search === undefined ? undefined : responses.get(search.id);
+    const searchPayload = searchResponse === undefined ? undefined : parseJsonObject(searchResponse.event.content);
+    const retrievedAt = Date.parse(input.retrievedAt);
+    const searchObservedAt = searchResponse === undefined
+      ? Number.NaN
+      : Date.parse(createdAt(searchResponse.event));
+    if (
+      scrape === undefined || scrapeResponse === undefined ||
+      search === undefined || searchResponse === undefined || searchPayload === undefined ||
+      errorMessage(scrapeResponse.event) !== undefined ||
+      errorMessage(searchResponse.event) !== undefined ||
+      !emptyExternalPayload(scrapeResponse.event) ||
+      !(scrape.eventIndex < scrapeResponse.eventIndex &&
+        scrapeResponse.eventIndex < search.eventIndex &&
+        search.eventIndex < searchResponse.eventIndex &&
+        searchResponse.eventIndex < recordCall.eventIndex) ||
+      !Number.isFinite(retrievedAt) || !Number.isFinite(searchObservedAt) ||
+      Math.abs(retrievedAt - searchObservedAt) > 120_000 ||
+      !evidenceMetadataIsBound(input, searchPayload)
+    ) continue;
+    return { scrape, scrapeResponse, search, searchResponse, recordEvidence: recordCall, input };
+  }
+  return undefined;
+}
+
+export function verifyTrueForgeEvidenceAuthorization(
+  entries: TrueForgeEventEntry[],
+  input: RecordRecallEvidenceInput,
+  excludedCallIds: ReadonlySet<string> = new Set(),
+): TrueForgeAuthorizationProof | undefined {
+  const trace = findEvidenceTrace(entries, input, excludedCallIds);
+  return trace === undefined
+    ? undefined
+    : { callId: trace.recordEvidence.id, authorizedAt: createdAt(trace.recordEvidence.event) };
+}
+
+export function verifyTrueForgeMutationAuthorization(
+  entries: TrueForgeEventEntry[],
+  input: ApplyContainmentPatchArguments,
+  excludedCallIds: ReadonlySet<string> = new Set(),
+): TrueForgeAuthorizationProof | undefined {
+  const { ordered, calls } = orderedTrace(entries);
+  const apply = calls.find((call) =>
+    call.name === "apply_containment_patch" &&
+    call.serverName === "truthlease-local" &&
+    !excludedCallIds.has(call.id) &&
+    equalJson(call.arguments, input),
+  );
+  if (apply === undefined) return undefined;
+  const approvalRequiredIndex = ordered.findIndex(({ event }, eventIndex) =>
+    eventIndex > apply.eventIndex &&
+    event.type === "tool.approval_required" &&
+    array(event.tool_calls).some((item) => string(record(item)?.id) === apply.id),
+  );
+  const approvalResolutionIndex = ordered.findIndex(({ event }, eventIndex) =>
+    eventIndex > approvalRequiredIndex &&
+    event.type === "turn.created" &&
+    array(event.input).some((item) => {
+      const approval = record(item);
+      return approval?.type === "user.tool_approval" &&
+        approval.tool_call_id === apply.id &&
+        record(approval.approval)?.status === "allow";
+    }),
+  );
+  if (approvalRequiredIndex < 0 || approvalResolutionIndex < 0) return undefined;
+  return {
+    callId: apply.id,
+    authorizedAt: createdAt(ordered[approvalResolutionIndex]!.event),
+  };
+}
+
 function toolCallsFrom(event: UnknownRecord): ToolCallRecord[] {
   if (event.type !== "model.message") return [];
   return array(event.tool_calls).flatMap((candidate) => {
@@ -116,6 +377,12 @@ function errorMessage(event: UnknownRecord): string | undefined {
   }
   const content = string(event.content);
   return content?.toLowerCase().includes("error") ? content : undefined;
+}
+
+export function sandboxExecutionSucceeded(event: UnknownRecord): boolean {
+  const payload = parseJsonObject(event.content);
+  const response = record(payload?.response);
+  return payload?.success === true && response?.exitCode === 0;
 }
 
 function listingStatus(published: unknown): string {
@@ -274,7 +541,11 @@ export function buildCaseEventFeed(
           differing_fields: differing,
         };
       });
-    if (sandbox !== undefined && sandboxResponse !== undefined && errorMessage(sandboxResponse) === undefined) {
+    if (
+      sandbox !== undefined &&
+      sandboxResponse !== undefined &&
+      sandboxExecutionSucceeded(sandboxResponse)
+    ) {
       generated.push({
         type: "analysis.completed",
         source: apply.event,
@@ -295,11 +566,18 @@ export function buildCaseEventFeed(
       });
     }
   }
-  if (sandboxExec !== undefined && sandboxResponse !== undefined && errorMessage(sandboxResponse) !== undefined) {
+  if (
+    sandboxExec !== undefined &&
+    sandboxResponse !== undefined &&
+    !sandboxExecutionSucceeded(sandboxResponse)
+  ) {
     generated.push({
       type: "analysis.failed",
       source: sandboxResponse,
-      payload: { code: "sandbox_initialization_failed", message: errorMessage(sandboxResponse) ?? "Sandbox failed." },
+      payload: {
+        code: "sandbox_execution_failed",
+        message: errorMessage(sandboxResponse) ?? "Sandbox returned a non-zero or unsuccessful result.",
+      },
     });
   }
 
@@ -446,37 +724,9 @@ export function verifyP0SessionEvents(
   sessionId: string,
   entries: TrueForgeEventEntry[],
 ): P0SessionVerification {
-  const ordered = [...entries].sort((left, right) => {
-    const byTime = Date.parse(createdAt(left.event)) - Date.parse(createdAt(right.event));
-    return byTime !== 0 ? byTime : String(left.event.id).localeCompare(String(right.event.id));
-  });
-  const indexedCalls = ordered.flatMap(({ event }, eventIndex) =>
-    toolCallsFrom(event).map((call) => ({ ...call, eventIndex })),
-  );
-  const indexedResponses = new Map<string, { event: UnknownRecord; eventIndex: number }>();
-  ordered.forEach(({ event }, eventIndex) => {
-    if (event.type !== "tool.response") return;
-    const callId = string(event.tool_call_id);
-    if (callId !== undefined) indexedResponses.set(callId, { event, eventIndex });
-  });
-
-  const qualifyingBright = indexedCalls
-    .filter(
-      (call) =>
-        call.serverName === "bright-data" &&
-        (call.name === "scrape_as_markdown" || call.name === "search_engine"),
-    )
-    .map((call) => ({ call, response: indexedResponses.get(call.id) }))
-    .find(({ response }) => {
-      const content = string(response?.event.content) ?? "";
-      return content.includes("www.cpsc.gov/Recalls/2026/HABA-USA-Recalls-Rainbow-Rattle") &&
-        content.includes("26-719") &&
-        content.includes("2012261001") &&
-        content.includes("0925");
-    });
-  const bright = qualifyingBright?.call;
-  const brightResponse = qualifyingBright?.response;
-  const recordEvidence = indexedCalls.find((call) => call.name === "record_recall_evidence");
+  const { ordered, calls: indexedCalls, responses: indexedResponses } = orderedTrace(entries);
+  const evidenceTrace = findEvidenceTrace(entries);
+  const recordEvidence = evidenceTrace?.recordEvidence;
   const recordResponse = recordEvidence === undefined ? undefined : indexedResponses.get(recordEvidence.id);
   const sandboxCreatedIndex = ordered.findIndex(({ event }) => event.type === "sandbox.created");
   const sandboxExec = indexedCalls.find((call) => call.name === "exec");
@@ -504,6 +754,14 @@ export function verifyP0SessionEvents(
   const verify = indexedCalls.find((call) => call.name === "verify_containment_state");
   const verifyResponse = verify === undefined ? undefined : indexedResponses.get(verify.id);
   const verification = verifyResponse === undefined ? undefined : responsePayload(verifyResponse.event);
+  const truthLeaseToolNames = new Set([
+    "record_recall_evidence",
+    "get_truth_lease",
+    "get_retailer_state",
+    "apply_containment_patch",
+    "verify_containment_state",
+  ]);
+  const truthLeaseCalls = indexedCalls.filter((call) => truthLeaseToolNames.has(call.name));
   const requiredWireKeys = [
     "listing_id",
     "lease_id",
@@ -522,8 +780,10 @@ export function verifyP0SessionEvents(
     "analysisSha256",
   ];
   const chronology = [
-    bright?.eventIndex ?? -1,
-    brightResponse?.eventIndex ?? -1,
+    evidenceTrace?.scrape.eventIndex ?? -1,
+    evidenceTrace?.scrapeResponse.eventIndex ?? -1,
+    evidenceTrace?.search.eventIndex ?? -1,
+    evidenceTrace?.searchResponse.eventIndex ?? -1,
     recordEvidence?.eventIndex ?? -1,
     recordResponse?.eventIndex ?? -1,
     sandboxExec?.eventIndex ?? -1,
@@ -538,9 +798,16 @@ export function verifyP0SessionEvents(
   ];
   const checks: P0VerificationCheck[] = [
     {
-      name: "Bright Data performed the qualifying live CPSC scrape",
-      passed: bright !== undefined && brightResponse !== undefined && errorMessage(brightResponse.event) === undefined,
-      observed: bright === undefined ? null : { callId: bright.id, url: bright.arguments.url },
+      name: "Bright Data used the canonical scrape and only then the exact fallback search",
+      passed: evidenceTrace !== undefined,
+      observed: evidenceTrace === undefined
+        ? null
+        : {
+            scrapeCallId: evidenceTrace.scrape.id,
+            url: evidenceTrace.scrape.arguments.url,
+            searchCallId: evidenceTrace.search.id,
+            query: evidenceTrace.search.arguments.query,
+          },
     },
     {
       name: "TruthLease persisted a server-hashed evidence receipt",
@@ -553,7 +820,7 @@ export function verifyP0SessionEvents(
         sandboxCreatedIndex >= 0 &&
         sandboxExec !== undefined &&
         sandboxResponse !== undefined &&
-        errorMessage(sandboxResponse.event) === undefined,
+        sandboxExecutionSucceeded(sandboxResponse.event),
       observed: sandboxCreatedIndex < 0 ? null : ordered[sandboxCreatedIndex]?.event.sandbox_id,
     },
     {
@@ -584,6 +851,13 @@ export function verifyP0SessionEvents(
       name: "fresh persisted-state verification passed",
       passed: verification?.passed === true && verification?.verdict === "VERIFIED",
       observed: verification === undefined ? null : { passed: verification.passed, verdict: verification.verdict },
+    },
+    {
+      name: "all TruthLease reads, evidence, mutation, and verification used the bound local MCP server",
+      passed:
+        [...truthLeaseToolNames].every((name) => truthLeaseCalls.some((call) => call.name === name)) &&
+        truthLeaseCalls.every((call) => call.serverName === "truthlease-local"),
+      observed: truthLeaseCalls.map((call) => ({ name: call.name, serverName: call.serverName ?? null })),
     },
     {
       name: "the qualifying transitions occurred in strict order",
