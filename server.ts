@@ -12,6 +12,9 @@ const store = new RetailerStore(
 );
 
 const app = express();
+app.get("/", (_request, response) => {
+  response.redirect(302, "/index.html");
+});
 app.use(createApp(store, { projectRoot, hostedReadOnly: true }));
 
 export default app;
