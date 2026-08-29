@@ -2,7 +2,9 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "public/ui",
-    "rootDir": "src/ui"
+    "rootDir": "src/ui",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "types": []
   },
   "include": ["src/ui/**/*.ts"],
   "exclude": ["node_modules", "dist", "test"]

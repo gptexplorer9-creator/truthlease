@@ -8,7 +8,8 @@
     "node": ">=22.14"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.ui.json",
+    "build": "tsc -p tsconfig.json && npm run build:ui",
+    "build:ui": "tsc -p tsconfig.ui.json",
     "check": "npm run build && npm test",
     "dev": "tsx watch src/server.ts",
     "evidence:direct-dev": "tsx scripts/live-evidence.ts",
