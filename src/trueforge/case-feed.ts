@@ -101,7 +101,8 @@ function toolCallsFrom(event: UnknownRecord): ToolCallRecord[] {
 }
 
 function responsePayload(event: UnknownRecord): UnknownRecord | undefined {
-  return parseJsonObject(event.content);
+  const payload = parseJsonObject(event.content);
+  return record(payload?.result) ?? payload;
 }
 
 function errorMessage(event: UnknownRecord): string | undefined {
@@ -525,9 +526,9 @@ export function verifyP0SessionEvents(
     brightResponse?.eventIndex ?? -1,
     recordEvidence?.eventIndex ?? -1,
     recordResponse?.eventIndex ?? -1,
-    sandboxCreatedIndex,
     sandboxExec?.eventIndex ?? -1,
     sandboxResponse?.eventIndex ?? -1,
+    sandboxCreatedIndex,
     apply?.eventIndex ?? -1,
     approvalRequiredIndex,
     approvalResolutionIndex,

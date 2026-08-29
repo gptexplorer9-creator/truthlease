@@ -196,6 +196,26 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
   app.use((request, response, next) => {
+    response.set({
+      "Content-Security-Policy": [
+        "default-src 'self'",
+        "base-uri 'none'",
+        "connect-src 'self'",
+        "font-src 'self'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+        "img-src 'self' data:",
+        "object-src 'none'",
+        "script-src 'self'",
+        "style-src 'self'",
+      ].join("; "),
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Resource-Policy": "same-origin",
+      "Permissions-Policy": "camera=(), geolocation=(), microphone=()",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+    });
     const host = request.hostname.toLowerCase();
     if (!hostedReadOnly && host !== "127.0.0.1" && host !== "localhost") {
       response.status(403).json({ error: "Host is not allow-listed." });

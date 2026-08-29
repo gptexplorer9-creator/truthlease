@@ -42,6 +42,19 @@ describe("hosted read-only deployment boundary", () => {
     expect(await response.json()).toMatchObject({ status: "ok", mode: "hosted_read_only" });
   });
 
+  it("applies restrictive browser security headers", async () => {
+    const response = await fetch(`${origin}/`);
+
+    expect(response.headers.get("content-security-policy")).toContain("default-src 'self'");
+    expect(response.headers.get("content-security-policy")).toContain("form-action 'none'");
+    expect(response.headers.get("permissions-policy")).toBe(
+      "camera=(), geolocation=(), microphone=()",
+    );
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+  });
+
   it("fails the local TrueForge bridge closed instead of synthesizing events", async () => {
     const response = await fetch(`${origin}/api/cases/TL-042/events`);
     expect(response.status).toBe(503);
