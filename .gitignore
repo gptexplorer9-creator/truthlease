@@ -1,6 +1,5 @@
 node_modules/
 dist/
-public/ui/
 runtime/
 .vercel/
 .env
