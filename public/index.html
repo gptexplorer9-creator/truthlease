@@ -14,6 +14,29 @@
   </head>
   <body>
     <div id="app"></div>
+    <aside id="run-now-control" class="run-now-control" aria-labelledby="run-now-title" hidden>
+      <div>
+        <p class="run-now-control__eyebrow">On-demand evidence check</p>
+        <h2 id="run-now-title">Check current evidence</h2>
+        <p id="run-now-status" class="run-now-control__status" aria-live="polite">Checking genuine-run readiness.</p>
+      </div>
+      <div class="run-now-control__actions">
+        <button id="run-now-button" type="button" disabled>Checking...</button>
+        <a id="run-now-approval" href="http://127.0.0.1:8790/" target="_blank" rel="noreferrer" hidden>Open TrueForge</a>
+      </div>
+      <p class="run-now-control__boundary">Run Now starts investigation only. Approval remains native to TrueForge; this browser cannot mutate retailer state.</p>
+    </aside>
+    <aside id="hosted-setup-control" class="run-now-control run-now-control--setup" aria-labelledby="hosted-setup-title" hidden>
+      <div>
+        <p class="run-now-control__eyebrow">Bring your own integrations</p>
+        <h2 id="hosted-setup-title">Run a genuine loop locally</h2>
+        <p class="run-now-control__status">Connect your own model provider and Bright Data inside local TrueForge. Credentials never enter this site.</p>
+      </div>
+      <div class="run-now-control__actions">
+        <a class="run-now-control__primary-link" href="/setup.html">Run with your integrations</a>
+      </div>
+      <p class="run-now-control__boundary">This hosted case file has no credential, approval, or retailer-mutation authority.</p>
+    </aside>
     <div id="connection-status" class="connection-status" aria-live="polite" aria-atomic="true"></div>
     <noscript>
       <main class="noscript">
@@ -22,5 +45,6 @@
       </main>
     </noscript>
     <script type="module" src="/truthlease-ui.js"></script>
+    <script type="module" src="/setup.js"></script>
   </body>
 </html>

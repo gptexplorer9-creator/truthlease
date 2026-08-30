@@ -23,7 +23,9 @@ import {
 } from "../ledger/index.js";
 import { canonicalJson } from "../ledger/canonical.js";
 import { buildCaseEventFeed, fetchTrueForgeEvents } from "../trueforge/case-feed.js";
+import { RunNowError, type RunNowService } from "../trueforge/run-now.js";
 import {
+  CurrentTrueForgeSessionTrustGate,
   RejectingTrustGate,
   TrueForgeSessionTrustGate,
   type TruthLeaseMcpTrustGate,
@@ -229,6 +231,8 @@ export interface AppOptions {
   ledger?: TruthLeaseLedger;
   connectorAuth?: ConnectorAuthenticatorConfig;
   connectorAttestation?: ConnectorAttestationConfig;
+  runNow?: RunNowService;
+  operationalAllowedHosts?: readonly string[];
 }
 
 type RequestWithRawBody = Request & { rawBody?: string };
@@ -502,11 +506,17 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
   const trueForgeBaseUrl = options.trueForgeBaseUrl ?? process.env.TRUTHLEASE_TRUEFORGE_URL ?? "http://127.0.0.1:8790";
   const trueForgeSessionId = options.trueForgeSessionId ?? process.env.TRUTHLEASE_TRUEFORGE_SESSION_ID;
   const hostedReadOnly = options.hostedReadOnly ?? false;
+  const operationalAllowedHosts = new Set(
+    options.operationalAllowedHosts?.map((host) => host.toLowerCase()) ?? ["127.0.0.1", "localhost"],
+  );
   const ledger = options.ledger;
+  const runNow = options.runNow;
   const trustGate = options.trustGate ?? (
-    trueForgeSessionId === undefined || trueForgeSessionId.trim().length === 0
-      ? new RejectingTrustGate()
-      : new TrueForgeSessionTrustGate(trueForgeBaseUrl, trueForgeSessionId)
+    runNow
+      ? new CurrentTrueForgeSessionTrustGate(trueForgeBaseUrl, () => runNow.currentSessionId())
+      : trueForgeSessionId === undefined || trueForgeSessionId.trim().length === 0
+        ? new RejectingTrustGate()
+        : new TrueForgeSessionTrustGate(trueForgeBaseUrl, trueForgeSessionId)
   );
   app.disable("x-powered-by");
   app.use(express.json({
@@ -537,7 +547,7 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
       "X-Frame-Options": "DENY",
     });
     const host = request.hostname.toLowerCase();
-    if (!hostedReadOnly && host !== "127.0.0.1" && host !== "localhost") {
+    if (!hostedReadOnly && !operationalAllowedHosts.has(host)) {
       response.status(403).json({ error: "Host is not allow-listed." });
       return;
     }
@@ -630,7 +640,8 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
       });
       return;
     }
-    if (trueForgeSessionId === undefined || trueForgeSessionId.trim().length === 0) {
+    const activeTrueForgeSessionId = runNow?.currentSessionId() ?? trueForgeSessionId;
+    if (activeTrueForgeSessionId === undefined || activeTrueForgeSessionId.trim().length === 0) {
       response.status(503).json({
         error: "No TrueForge session is bound to the case feed. The UI will not synthesize a run.",
       });
@@ -638,12 +649,53 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
     }
 
     try {
-      const events = await fetchTrueForgeEvents(trueForgeBaseUrl, trueForgeSessionId);
-      response.json(buildCaseEventFeed(leaseId, trueForgeSessionId, events, after));
+      const events = await fetchTrueForgeEvents(trueForgeBaseUrl, activeTrueForgeSessionId);
+      response.json(buildCaseEventFeed(leaseId, activeTrueForgeSessionId, events, after));
     } catch (error) {
       response.status(502).json({
         error: error instanceof Error ? error.message : "Failed to read TrueForge events.",
       });
+    }
+  });
+
+  app.get("/api/run-now/status", async (_request, response) => {
+    if (!runNow) {
+      response.status(404).json({ enabled: false });
+      return;
+    }
+    try {
+      response.json(await runNow.status());
+    } catch {
+      response.status(503).json({
+        enabled: true,
+        ready: false,
+        reason: "Run Now readiness could not be verified.",
+        cooldownRemainingMs: 0,
+      });
+    }
+  });
+
+  app.post("/api/run-now", async (request, response) => {
+    if (!runNow) {
+      response.status(404).json({ enabled: false, error: "Run Now is not configured." });
+      return;
+    }
+    if (
+      !isRecord(request.body) ||
+      Object.keys(request.body).some((key) => key !== "caseId") ||
+      typeof request.body.caseId !== "string"
+    ) {
+      response.status(400).json({ error: "Run Now accepts only a caseId string." });
+      return;
+    }
+    try {
+      response.status(202).json(await runNow.start(request.body.caseId));
+    } catch (error) {
+      if (error instanceof RunNowError) {
+        response.status(error.status).json({ error: error.message, code: error.code });
+        return;
+      }
+      response.status(502).json({ error: "Run Now failed closed before a genuine session could start." });
     }
   });
 

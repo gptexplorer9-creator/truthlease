@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#eeebea" />
+    <meta name="description" content="Connect your own model provider and Bright Data to run a genuine TruthLease loop locally without giving the hosted site credentials or mutation authority." />
+    <title>Run TruthLease with your integrations</title>
+    <link rel="stylesheet" href="/truthlease-ui.css" />
+    <link rel="stylesheet" href="/setup.css" />
+  </head>
+  <body class="setup-body">
+    <a class="skip-link" href="#setup-main">Skip to setup</a>
+    <header class="setup-header">
+      <a class="wordmark" href="/" aria-label="TruthLease case file">
+        <span class="wordmark__mark" aria-hidden="true">TL</span>
+        <span>TruthLease</span>
+      </a>
+      <a class="setup-header__back" href="/">Back to case file</a>
+    </header>
+
+    <main id="setup-main" class="setup-shell">
+      <section class="setup-hero" aria-labelledby="setup-title">
+        <div>
+          <p class="eyebrow">Bring your own integrations</p>
+          <h1 id="setup-title">Run the real evidence loop on your machine.</h1>
+          <p class="setup-hero__lede">The hosted site is a read-only case file. To fetch current evidence and reach a genuine approval pause, run the local companion with your own TrueForge, model provider, and Bright Data connection.</p>
+        </div>
+        <dl class="setup-boundary" aria-label="Authority boundary">
+          <div><dt>Credentials</dt><dd>Local TrueForge only</dd></div>
+          <div><dt>Approval</dt><dd>Native TrueForge screen</dd></div>
+          <div><dt>Mutation</dt><dd>Local controlled state only</dd></div>
+        </dl>
+      </section>
+
+      <section class="setup-warning" aria-labelledby="credential-boundary-title">
+        <div class="setup-warning__mark" aria-hidden="true">01</div>
+        <div>
+          <p class="eyebrow">Credential boundary</p>
+          <h2 id="credential-boundary-title">Do not paste a key into TruthLease or Vercel.</h2>
+          <p>Enter provider credentials only at <code>http://127.0.0.1:8790/settings</code> after local TrueForge is running. They are not needed in this website, the TruthLease repository, a Vercel environment variable, or a TruthLease <code>.env</code> file.</p>
+        </div>
+      </section>
+
+      <nav class="setup-rail" aria-label="Setup stages">
+        <ol>
+          <li><a href="#evidence"><span>01</span>Evidence</a></li>
+          <li><a href="#initialize"><span>02</span>Initialize</a></li>
+          <li><a href="#connect"><span>03</span>Bind services</a></li>
+          <li><a href="#approval"><span>04</span>Approval</a></li>
+          <li><a href="#verify"><span>05</span>Verify</a></li>
+        </ol>
+      </nav>
+
+      <div class="setup-steps">
+        <section id="evidence" class="setup-step" aria-labelledby="evidence-title">
+          <header class="setup-step__header">
+            <span class="setup-step__number" aria-hidden="true">01</span>
+            <div>
+              <p class="eyebrow">Evidence-ledger entry</p>
+              <h2 id="evidence-title">Start with the case record</h2>
+              <p>Read the hosted TL-042 case file first. It shows the causal record and authority boundaries, but it cannot fetch with your services, approve a patch, or mutate retailer state.</p>
+            </div>
+          </header>
+          <div class="setup-checklist setup-checklist--compact">
+            <h3>Verify before continuing</h3>
+            <p>Confirm the hosted interface says read-only and that no provider key is requested. Then return here to initialize the local operator.</p>
+            <a class="setup-text-link" href="/?case=TL-042">Inspect the evidence ledger</a>
+          </div>
+        </section>
+
+        <section id="initialize" class="setup-step" aria-labelledby="initialize-title">
+          <header class="setup-step__header">
+            <span class="setup-step__number" aria-hidden="true">02</span>
+            <div>
+              <p class="eyebrow">Verified path: Windows + Ubuntu WSL</p>
+              <h2 id="initialize-title">Initialize local TrueForge</h2>
+              <p>Use a clean checkout. The setup verifies required Ubuntu sandbox commands, then installs pinned Node and TrueForge runtimes into your WSL user data directory.</p>
+            </div>
+          </header>
+          <details class="setup-disclosure">
+            <summary>Show verified installation commands</summary>
+            <div class="command-card">
+              <div class="command-card__bar"><span>PowerShell</span><button type="button" data-copy="clone-command">Copy</button></div>
+              <pre id="clone-command"><code>git clone https://github.com/gptexplorer9-creator/truthlease.git
+cd truthlease
+npm ci
+npm run trueforge:wsl:setup</code></pre>
+            </div>
+          </details>
+          <p class="setup-note">The script does not install missing Ubuntu packages. If it names one, install that package through your normal administrator-approved process and rerun the check. Native Linux or macOS may use TrueForge 0.1.4 with an equivalent native sandbox, but that path is not yet verified by this project.</p>
+          <p class="setup-verification"><strong>Verify:</strong> setup ends with a successful native Bubblewrap probe and a pinned TrueForge version. Stop if either check fails.</p>
+        </section>
+
+        <section id="connect" class="setup-step" aria-labelledby="connect-title">
+          <header class="setup-step__header">
+            <span class="setup-step__number" aria-hidden="true">03</span>
+            <div>
+              <p class="eyebrow">Local TrueForge Settings</p>
+              <h2 id="connect-title">Bind Bright Data and a model provider</h2>
+              <p>Start TrueForge, then open its local Settings page. The services and credentials stay in TrueForge.</p>
+            </div>
+          </header>
+          <div class="command-card">
+            <div class="command-card__bar"><span>PowerShell - keep running</span><button type="button" data-copy="trueforge-command">Copy</button></div>
+            <pre id="trueforge-command"><code>npm run trueforge:wsl</code></pre>
+          </div>
+          <p class="local-location"><strong>Then open locally:</strong> <code>http://127.0.0.1:8790/settings</code></p>
+          <div class="credential-table" role="region" aria-label="Credential placement" tabindex="0">
+            <table>
+              <thead><tr><th>Connection</th><th>Where to enter it</th><th>TruthLease requirement</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><strong>OpenAI API key</strong><span>Model provider</span></td>
+                  <td>Local TrueForge Settings - Model providers - OpenAI</td>
+                  <td>Tested default. TruthLease currently verifies the supplied OpenAI agent manifest.</td>
+                </tr>
+                <tr>
+                  <td><strong>Bright Data authorization</strong><span>MCP server</span></td>
+                  <td>Local TrueForge Settings - MCP servers - <code>bright-data</code></td>
+                  <td>Required. It is the qualifying transport for current official web evidence.</td>
+                </tr>
+                <tr>
+                  <td><strong>Other AI provider</strong><span>Optional, unverified</span></td>
+                  <td>Local TrueForge Settings - Model providers</td>
+                  <td>May work if TrueForge supports it, but you must change <code>manifest.model.name</code>; this project has not verified that path.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="setup-note">OpenAI is a model-provider connection, not the evidence MCP. Bright Data is the required evidence MCP. Never commit, screenshot, or paste either credential into an issue or chat.</p>
+          <p class="setup-verification"><strong>Verify:</strong> TrueForge Settings shows one connected model provider and an authenticated MCP server named <code>bright-data</code>. No credential should appear in TruthLease.</p>
+        </section>
+
+        <section id="approval" class="setup-step" aria-labelledby="approval-title">
+          <header class="setup-step__header">
+            <span class="setup-step__number" aria-hidden="true">04</span>
+            <div>
+              <p class="eyebrow">Credential-free bridge - native approval</p>
+              <h2 id="approval-title">Reach the genuine approval pause</h2>
+              <p>Start the local server and WSL relay in separate terminals, then bind the printed relay URL as <code>truthlease-local</code>. Run Now may investigate and propose one patch, but only TrueForge can ask you to approve it.</p>
+            </div>
+          </header>
+          <details class="setup-disclosure">
+            <summary>Show local bridge commands</summary>
+            <div class="command-grid">
+              <div class="command-card">
+                <div class="command-card__bar"><span>Terminal A - TruthLease</span><button type="button" data-copy="server-command">Copy</button></div>
+                <pre id="server-command"><code>$env:TRUTHLEASE_RUN_NOW_ENABLED='true'
+$env:TRUTHLEASE_RUN_NOW_AGENT='truthlease-recall-containment-p0-v4'
+$env:TRUTHLEASE_TRUEFORGE_URL='http://127.0.0.1:8790'
+npm run dev</code></pre>
+              </div>
+              <div class="command-card">
+                <div class="command-card__bar"><span>Terminal B - WSL relay</span><button type="button" data-copy="relay-command">Copy</button></div>
+                <pre id="relay-command"><code>$env:TRUTHLEASE_WSL_RELAY_HOST = (wsl.exe sh -lc "ip route | sed -n 's/^default via \([^ ]*\).*/\1/p'").Trim()
+if (-not $env:TRUTHLEASE_WSL_RELAY_HOST) { throw "Could not determine the Windows host address visible to WSL." }
+npm run mcp:relay:wsl</code></pre>
+              </div>
+            </div>
+          </details>
+          <div class="setup-checklist" aria-label="TrueForge configuration checklist">
+            <h3>In local TrueForge</h3>
+            <ol>
+              <li>Add the relay URL printed by Terminal B as MCP server <code>truthlease-local</code>.</li>
+              <li>Confirm exactly five TruthLease tools are discovered, including <code>apply_containment_patch</code>.</li>
+              <li>Create the agent from the latest <code>config/trueforge-agent-manifest-*.json</code> in this repository.</li>
+              <li>Keep native approval required for <code>apply_containment_patch</code>. Do not weaken the manifest's sandbox or MCP limits.</li>
+            </ol>
+          </div>
+          <p class="setup-verification"><strong>Verify:</strong> Run Now stops on a native TrueForge approval screen that shows the exact patch arguments. No mutation event exists before your decision.</p>
+          <p class="setup-note"><strong>Fail closed:</strong> if TrueForge reports that its sandbox cannot install <code>pydantic</code> through the allowlisted proxy, stop. Do not disable sandboxing or treat an unsandboxed calculation as valid.</p>
+        </section>
+
+        <section id="verify" class="setup-step" aria-labelledby="verify-title">
+          <header class="setup-step__header">
+            <span class="setup-step__number" aria-hidden="true">05</span>
+            <div>
+              <p class="eyebrow">Verified mutation - immutable record</p>
+              <h2 id="verify-title">Close the loop with a persisted re-read</h2>
+              <p>After an approval, TruthLease applies the exact authorized local patch once, re-reads persisted state, and appends the mutation and verification receipts to the ordered case record.</p>
+            </div>
+          </header>
+          <ol class="run-verdicts">
+            <li><span>01</span><div><strong>Decision bound</strong><p>The approval records one exact patch and argument set.</p></div></li>
+            <li><span>02</span><div><strong>Mutation applied</strong><p>The controlled local state changes only after approval.</p></div></li>
+            <li><span>03</span><div><strong>State re-read</strong><p>Verification reads persisted state rather than trusting the write response.</p></div></li>
+            <li><span>04</span><div><strong>Record appended</strong><p>The ordered ledger preserves evidence, decision, mutation, and verdict.</p></div></li>
+          </ol>
+          <div class="setup-scope">
+            <strong>What is real in this demo?</strong>
+            <p>The official recall evidence is fetched live through your Bright Data connection, the analysis runs in the genuine TrueForge sandbox, and approval is a real native pause. The containment mutation targets the repository's controlled local retailer state, not a third-party production retailer.</p>
+          </div>
+          <p class="setup-verification"><strong>Verify:</strong> the ledger shows both <code>patch.applied</code> and a later <code>verification.completed</code> event with <code>passed: true</code>. A denial must show no mutation.</p>
+        </section>
+      </div>
+
+      <section class="setup-final" aria-labelledby="final-title">
+        <p class="eyebrow">Authority stays visible</p>
+        <h2 id="final-title">The Vercel site never becomes the operator.</h2>
+        <p>It explains the loop and shows its evidence ledger. Your local TrueForge holds provider connections and approval state; your local TruthLease companion holds the controlled case state.</p>
+        <a class="button" href="/">Return to the hosted case file</a>
+      </section>
+    </main>
+
+    <script type="module" src="/setup.js"></script>
+  </body>
+</html>

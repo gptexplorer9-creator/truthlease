@@ -111,3 +111,35 @@ export class TrueForgeSessionTrustGate implements TruthLeaseMcpTrustGate {
     };
   }
 }
+
+/** Resolve the active session at authorization time so a new Run Now session is bound before any write. */
+export class CurrentTrueForgeSessionTrustGate implements TruthLeaseMcpTrustGate {
+  private readonly gates = new Map<string, TrueForgeSessionTrustGate>();
+
+  public constructor(
+    private readonly baseUrl: string,
+    private readonly currentSessionId: () => string | undefined,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  public authorizeEvidence(input: RecordRecallEvidenceInput): Promise<TruthLeaseAuthorization> {
+    return this.currentGate().authorizeEvidence(input);
+  }
+
+  public authorizeMutation(input: ApplyContainmentPatchArguments): Promise<TruthLeaseAuthorization> {
+    return this.currentGate().authorizeMutation(input);
+  }
+
+  private currentGate(): TrueForgeSessionTrustGate {
+    const sessionId = this.currentSessionId()?.trim();
+    if (!sessionId) {
+      throw new Error("Evidence and mutation are disabled until Run Now creates a genuine TrueForge session.");
+    }
+    let gate = this.gates.get(sessionId);
+    if (!gate) {
+      gate = new TrueForgeSessionTrustGate(this.baseUrl, sessionId, this.fetchImpl);
+      this.gates.set(sessionId, gate);
+    }
+    return gate;
+  }
+}

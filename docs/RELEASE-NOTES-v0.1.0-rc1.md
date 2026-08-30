@@ -1,6 +1,6 @@
 # TruthLease v0.1.0-rc1 release-notes draft
 
-Source candidate: `5a08272` (`fix(ui): bind verification and page case index`)
+Source candidate: final release commit pending.
 
 Status: documentation-ready release candidate for one hackathon demo workflow. These notes are not a published GitHub release, deployment receipt, current genuine-run receipt, or submission record. TruthLease is not a production retailer integration.
 
@@ -30,7 +30,7 @@ This is an implementation description. A qualifying demonstration still requires
 
 Use [`DEMO-JOURNEY.md`](DEMO-JOURNEY.md) for the 2–3 minute judge talk track and Mermaid sequence.
 
-## Evidence supported by candidate `5a08272`
+## Evidence supported by the working candidate
 
 | Claim | Repository support |
 | --- | --- |
@@ -49,10 +49,10 @@ The integration tests use controlled test authorization and fixtures. They do no
 
 | Evidence | Current release status |
 | --- | --- |
-| Build and full tests | Passed for `5a08272`: 22 test files, 107 tests |
+| Build and full tests | Passed on 2026-08-29: 24 test files, 136 tests |
 | Qodo review for the current candidate | Pending external review evidence |
-| Genuine Bright Data + native TrueForge sandbox + native approval run | Pending current recorded run |
-| Live hosted URL | [truthlease.vercel.app](https://truthlease.vercel.app) exists, but the deployment predates `5a08272` and its ledger is empty until a genuine run is ingested |
+| Genuine Bright Data + native TrueForge sandbox + native approval run | Passed in session `01m18mskn7dvwx7e28ywxm6h8g`; see the [sanitized genuine-run receipt](evidence/GENUINE-RUN-2026-08-30.md) |
+| Live hosted URL | [truthlease.vercel.app](https://truthlease.vercel.app) exists; deployment of the final release commit and live behavior remain to be verified |
 | Screenshot/GIF/video | Pending capture; must preserve fixture and live labels |
 | GitHub release | Pending owner authorization |
 | Hackathon/Google submission | Owner-gated and not performed |
@@ -73,7 +73,7 @@ Do not infer any pending item from source comments, commit messages, fixtures, a
 
 ## Validation
 
-The complete repository check passed on 2026-08-29 for candidate `5a08272`: build succeeded and Vitest passed 22 test files with 107 tests. Documentation checks also passed for local Markdown links, invalid control bytes, and the Mermaid sequence. These results verify the repository candidate only; they do not upgrade any external evidence item.
+The complete repository check passed on 2026-08-29 for the working candidate: build succeeded and Vitest passed 24 test files with 136 tests. ReleaseBench reported all 12 repository-release surfaces present, and the production dependency audit found zero vulnerabilities. These results verify the working tree only; they do not upgrade any external evidence item or identify the eventual release commit.
 
 See [`RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) for the evidence gates and owner handoff.
 
@@ -83,6 +83,6 @@ See [`RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) for the evidence gates and ow
 - The candidate covers one recall-containment workflow, not general recall monitoring or marketplace coverage.
 - Repository tests demonstrate code behavior under controlled inputs; they do not make fixtures live or prove external services ran.
 - A hosted shell or empty ledger is not a deployed qualifying case.
-- The hosted URL exists, but its deployment predates this candidate and its empty ledger contains no genuine run evidence.
-- Current genuine run, final-candidate Qodo review, and video evidence remain pending until separately verified.
+- The hosted URL exists, but deployment and behavior for the final release commit remain pending verification.
+- Final-candidate Qodo review, deployment, and video evidence remain pending until separately verified.
 - Release publication, deployment, and submission remain owner-gated.
