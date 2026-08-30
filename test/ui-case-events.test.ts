@@ -1,0 +1,199 @@
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  FixtureCaseEventSource,
+  HttpCaseEventSource,
+  mergeCaseEvents,
+  parseCaseEventFeed,
+} from "../src/ui/case-events.js";
+import { loadCaseFeedForPolling } from "../src/ui/browser-app.js";
+import { completeEvents, completeFeed, fixtureEvent } from "./ui-fixtures.js";
+
+describe("case event transport", () => {
+  it("accepts one strictly ordered, single-run feed", () => {
+    const parsed = parseCaseEventFeed(completeFeed());
+    expect(parsed.events).toHaveLength(7);
+    expect(parsed.events.at(-1)?.type).toBe("verification.completed");
+  });
+
+  it("rejects unknown event names, cross-run events, and non-increasing sequences", () => {
+    expect(() =>
+      parseCaseEventFeed({
+        ...completeFeed(),
+        events: [{ ...completeEvents[0], type: "approval.fabricated" }],
+      }),
+    ).toThrow(/Unsupported TruthLease event type/);
+
+    expect(() =>
+      parseCaseEventFeed({
+        ...completeFeed(),
+        events: [{ ...completeEvents[0], runId: "another-run" }],
+      }),
+    ).toThrow(/different run/);
+
+    expect(() =>
+      parseCaseEventFeed({
+        ...completeFeed(),
+        events: [completeEvents[1], completeEvents[0]],
+      }),
+    ).toThrow(/strictly ordered/);
+
+    expect(() =>
+      parseCaseEventFeed({
+        ...completeFeed(),
+        events: [completeEvents[0], { ...completeEvents[1]!, id: completeEvents[0]!.id }],
+      }),
+    ).toThrow(/appears more than once/);
+  });
+
+  it("uses only GET on the same-origin case feed and supports an after cursor", async () => {
+    const fetch = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify(completeFeed([completeEvents[6]!])), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const source = new HttpCaseEventSource({ fetch });
+
+    await source.loadCase("TL-042", 6);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe("/api/cases/TL-042/events?after=6");
+    expect(init).toMatchObject({ method: "GET", headers: { accept: "application/json" } });
+    expect(JSON.stringify(init)).not.toContain("apply_containment_patch");
+  });
+
+  it("filters deterministic fixture events without mutating the fixture", async () => {
+    const source = new FixtureCaseEventSource(completeFeed());
+    const delta = await source.loadCase("TL-042", 4);
+    const full = await source.loadCase("TL-042");
+
+    expect(delta.events.map((event) => event.sequence)).toEqual([5, 6, 7]);
+    expect(full.events).toHaveLength(7);
+  });
+
+  it("refetches a replacement run from cursor zero before accepting its restarted sequence", async () => {
+    const replacementEvent = {
+      ...completeEvents[0]!,
+      id: "replacement-event-1",
+      runId: "run-replacement",
+      sequence: 1,
+    };
+    const loadCase = vi
+      .fn()
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "verified",
+        lastSequence: 1,
+        events: [],
+      })
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "running",
+        lastSequence: 1,
+        events: [replacementEvent],
+      });
+
+    const feed = await loadCaseFeedForPolling(
+      { loadCase },
+      "TL-042",
+      completeFeed().runId,
+      7,
+    );
+
+    expect(loadCase).toHaveBeenNthCalledWith(1, "TL-042", 7, undefined);
+    expect(loadCase).toHaveBeenNthCalledWith(2, "TL-042", undefined, undefined);
+    expect(feed.events).toEqual([replacementEvent]);
+    expect(feed.lastSequence).toBe(1);
+  });
+
+  it("rejects an incomplete cursor-zero replacement run before its cursor can advance", async () => {
+    const loadCase = vi
+      .fn()
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "verified",
+        lastSequence: 1,
+        events: [],
+      })
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "verified",
+        lastSequence: 1,
+        events: [],
+      });
+
+    await expect(
+      loadCaseFeedForPolling({ loadCase }, "TL-042", completeFeed().runId, 7),
+    ).rejects.toThrow(/complete event history from cursor zero/);
+  });
+
+  it("rejects gaps in a cursor-zero replacement history", async () => {
+    const first = { ...completeEvents[0]!, id: "replacement-1", runId: "run-replacement" };
+    const third = {
+      ...completeEvents[2]!,
+      id: "replacement-3",
+      runId: "run-replacement",
+      sequence: 3,
+    };
+    const loadCase = vi
+      .fn()
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "running",
+        lastSequence: 3,
+        events: [],
+      })
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "running",
+        lastSequence: 3,
+        events: [first, third],
+      });
+
+    await expect(
+      loadCaseFeedForPolling({ loadCase }, "TL-042", completeFeed().runId, 7),
+    ).rejects.toThrow(/complete event history from cursor zero/);
+  });
+
+  it("accepts an empty replacement run only when lastSequence is zero", async () => {
+    const empty = {
+      caseId: "TL-042",
+      runId: "run-replacement",
+      status: "running",
+      lastSequence: 0,
+      events: [],
+    };
+    const loadCase = vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce(empty);
+
+    await expect(
+      loadCaseFeedForPolling({ loadCase }, "TL-042", completeFeed().runId, 7),
+    ).resolves.toEqual(empty);
+  });
+
+  it("merges only newer event IDs and rejects semantic ID reuse", () => {
+    expect(mergeCaseEvents(completeEvents.slice(0, 2), completeEvents.slice(2))).toHaveLength(7);
+    expect(
+      mergeCaseEvents(completeEvents.slice(0, 2), [completeEvents[1]!, ...completeEvents.slice(2)]),
+    ).toHaveLength(7);
+
+    expect(() =>
+      mergeCaseEvents(completeEvents.slice(0, 2), [
+        { ...fixtureEvent(3, "analysis.completed", {}), id: completeEvents[1]!.id },
+      ]),
+    ).toThrow(/reused with different semantics/);
+
+    expect(() =>
+      mergeCaseEvents(completeEvents.slice(0, 2), [
+        { ...completeEvents[1]!, payload: { changed: true } },
+      ]),
+    ).toThrow(/reused with different semantics/);
+  });
+});

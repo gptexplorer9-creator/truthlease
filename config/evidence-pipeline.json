@@ -1,0 +1,27 @@
+{
+  "provider": "bright-data",
+  "sourceAuthority": "U.S. Consumer Product Safety Commission (CPSC)",
+  "canonicalSourceUrl": "https://www.cpsc.gov/Recalls/2026/HABA-USA-Recalls-Rainbow-Rattle-Grasping-and-Teething-Toys-Due-to-Risk-of-Serious-Injury-or-Death-from-Choking-and-Ingestion-Hazards",
+  "primaryTool": "scrape_as_markdown",
+  "recovery": {
+    "tool": "search_engine",
+    "query": "site:cpsc.gov/Recalls HABA USA rattles 2012261001 0925",
+    "allowedDomain": "www.cpsc.gov"
+  },
+  "requiredFields": [
+    "source_url",
+    "retrieved_at",
+    "recall_number",
+    "title",
+    "product_name",
+    "recall_date",
+    "hazard",
+    "description",
+    "item_number",
+    "batch_code",
+    "evidence_text"
+  ],
+  "maximumAgeSeconds": 3600,
+  "failClosed": true,
+  "allowDirectWebFetchInAgent": false
+}

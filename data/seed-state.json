@@ -1,0 +1,49 @@
+{
+  "version": 7,
+  "leases": [
+    {
+      "id": "TL-042",
+      "decisionType": "publish_product_listing",
+      "subject": {
+        "listingId": "LISTING-1001",
+        "sku": "HABA-RNBW-0925",
+        "itemNumber": "2012261001",
+        "batchCode": "0925"
+      },
+      "supportingClaim": "No active official CPSC recall matches both this item number and batch code.",
+      "validityConditions": [
+        "No official CPSC recall matches item 2012261001 and batch 0925."
+      ],
+      "downstreamListingIds": ["LISTING-1001"],
+      "status": "active"
+    }
+  ],
+  "listings": [
+    {
+      "id": "LISTING-1001",
+      "sku": "HABA-RNBW-0925",
+      "title": "HABA Rainbow Rattle",
+      "itemNumber": "2012261001",
+      "batchCode": "0925",
+      "published": true
+    },
+    {
+      "id": "LISTING-1002",
+      "sku": "HABA-RNBW-0924",
+      "title": "HABA Rainbow Rattle - earlier batch",
+      "itemNumber": "2012261001",
+      "batchCode": "0924",
+      "published": true
+    },
+    {
+      "id": "LISTING-1003",
+      "sku": "HABA-STAR-0925",
+      "title": "HABA Star Rattle",
+      "itemNumber": "2012261002",
+      "batchCode": "0925",
+      "published": true
+    }
+  ],
+  "evidenceReceipts": [],
+  "auditEvents": []
+}
