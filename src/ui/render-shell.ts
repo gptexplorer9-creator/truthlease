@@ -855,6 +855,7 @@ export function renderFeedErrorHtml(
   message: string,
   runtime?: RenderRuntimeState,
 ): string {
+  const missingPublishedCase = /HTTP 404\b/i.test(message) && /\bdoes not exist\b/i.test(message);
   const normalizedRuntime = normalizeRuntime(
     undefined,
     {
@@ -864,8 +865,9 @@ export function renderFeedErrorHtml(
     },
     runtime?.terminalState ?? "unavailable",
   );
-  const title =
-    normalizedRuntime.terminalState === "offline"
+  const title = missingPublishedCase
+    ? "No published run exists for this case yet."
+    : normalizedRuntime.terminalState === "offline"
       ? "The case feed is offline from this browser."
       : normalizedRuntime.terminalState === "unauthorized"
         ? "The case feed is refusing authorization."
@@ -873,7 +875,9 @@ export function renderFeedErrorHtml(
   return renderShellFrame({
     caseId,
     runtime: normalizedRuntime,
-    mainContent: `<section class="feed-error" role="alert"><p class="eyebrow">Case ${escapeHtml(caseId)}</p><h1>${title}</h1><p>${escapeHtml(message)}</p><p>This is a connection boundary, not evidence that the operation failed. No browser mutation was attempted.</p></section>`,
+    mainContent: missingPublishedCase
+      ? `<section class="feed-error" role="status"><p class="eyebrow">Case ${escapeHtml(caseId)}</p><h1>${title}</h1><p>The hosted ledger only displays authenticated events after the outbound connector appends a genuine TrueForge run.</p><p>Run the local evidence loop and publish its verified record, or choose another recorded case. The browser cannot create, approve, or mutate a case.</p><p><a href="/setup.html#approval">Open the genuine-run setup guide</a></p></section>`
+      : `<section class="feed-error" role="alert"><p class="eyebrow">Case ${escapeHtml(caseId)}</p><h1>${title}</h1><p>${escapeHtml(message)}</p><p>This is a connection boundary, not evidence that the operation failed. No browser mutation was attempted.</p></section>`,
   });
 }
 

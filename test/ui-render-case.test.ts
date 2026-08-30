@@ -2,10 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import { buildCaseViewModel } from "../src/ui/case-model.js";
 import { renderCaseHtml } from "../src/ui/render-case.js";
-import { renderEmptyWorkspaceHtml } from "../src/ui/render-shell.js";
+import { renderEmptyWorkspaceHtml, renderFeedErrorHtml } from "../src/ui/render-shell.js";
 import { completeEvents, completeFeed, fixtureEvent, VALID_EVIDENCE_HASH, VALID_EVIDENCE_SOURCE } from "./ui-fixtures.js";
 
 describe("operational case-file renderer", () => {
+  it("explains an empty hosted ledger instead of presenting a cryptic 404 warning", () => {
+    const html = renderFeedErrorHtml(
+      "TL-042",
+      "Case event feed failed with HTTP 404: caseId TL-042 does not exist.",
+      { terminalState: "unavailable", queueState: "ready", queueCases: [] },
+    );
+
+    expect(html).toContain("No published run exists for this case yet.");
+    expect(html).toContain("outbound connector appends a genuine TrueForge run");
+    expect(html).toContain("/setup.html#approval");
+    expect(html).not.toContain("The case feed is unavailable.");
+  });
+
   it("renders an honest product workspace when the real ledger has no cases", () => {
     const html = renderEmptyWorkspaceHtml({
       terminalState: "connected",
