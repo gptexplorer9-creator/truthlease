@@ -86,7 +86,36 @@ describe("TrueForge Run Now", () => {
     const turnBody = JSON.parse(String(turnCall?.[1]?.body));
     expect(turnBody).toMatchObject({ previous_turn_id: "none", stream: false });
     expect(turnBody.input[0].content).toContain("stop at TrueForge native approval with zero writes");
-    await expect(service.status()).resolves.toMatchObject({ ready: false, cooldownRemainingMs: 60_000 });
+    await expect(service.status()).resolves.toMatchObject({
+      ready: false,
+      reason: expect.stringContaining("remains bound"),
+      activeSessionId: "session-real-1",
+      cooldownRemainingMs: 60_000,
+    });
+  });
+
+  it("never replaces an approval-paused active session after cooldown", async () => {
+    let now = new Date("2026-08-30T04:30:00.000Z");
+    const fetchImpl = readyFetch();
+    const service = new TrueForgeRunNowService({
+      baseUrl: "http://127.0.0.1:8790",
+      fetchImpl,
+      cooldownMs: 1_000,
+      now: () => now,
+    });
+
+    await service.start("TL-042");
+    now = new Date("2026-08-30T04:31:00.000Z");
+
+    await expect(service.status()).resolves.toMatchObject({
+      ready: false,
+      reason: expect.stringContaining("remains bound"),
+      activeSessionId: "session-real-1",
+      cooldownRemainingMs: 0,
+    });
+    await expect(service.start("TL-042")).rejects.toMatchObject({ code: "run_not_ready" });
+    expect(fetchImpl.mock.calls.filter(([input]) => new URL(input).pathname === "/api/v1/sessions")).toHaveLength(1);
+    expect(service.currentSessionId()).toBe("session-real-1");
   });
 
   it("accepts the live TrueForge top-level session and turn response shape", async () => {

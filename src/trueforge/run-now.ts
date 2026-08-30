@@ -170,6 +170,13 @@ export class TrueForgeRunNowService implements RunNowService {
       if (checkStarting && this.starting) {
         return this.readiness(false, "A genuine run is already starting.", cooldownRemainingMs);
       }
+      if (this.activeSession !== undefined) {
+        return this.readiness(
+          false,
+          "The current genuine run remains bound to its TrueForge session. Restart the local TruthLease process before starting a new controlled case run.",
+          cooldownRemainingMs,
+        );
+      }
       if (cooldownRemainingMs > 0) return this.readiness(false, "Run Now is cooling down before another external investigation.", cooldownRemainingMs);
       return this.readiness(true, undefined, 0);
     } catch (error) {

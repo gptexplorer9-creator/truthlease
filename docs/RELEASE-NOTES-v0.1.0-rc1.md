@@ -49,7 +49,7 @@ The integration tests use controlled test authorization and fixtures. They do no
 
 | Evidence | Current release status |
 | --- | --- |
-| Build and full tests | Passed on 2026-08-29: 24 test files, 136 tests |
+| Build and full tests | Passed on 2026-08-29: 24 test files, 137 tests |
 | Qodo review for the current candidate | Pending external review evidence |
 | Genuine Bright Data + native TrueForge sandbox + native approval run | Passed in session `01m18mskn7dvwx7e28ywxm6h8g`; see the [sanitized genuine-run receipt](evidence/GENUINE-RUN-2026-08-30.md) |
 | Live hosted URL | [truthlease.vercel.app](https://truthlease.vercel.app) exists; deployment of the final release commit and live behavior remain to be verified |
@@ -73,7 +73,7 @@ Do not infer any pending item from source comments, commit messages, fixtures, a
 
 ## Validation
 
-The complete repository check passed on 2026-08-29 for the working candidate: build succeeded and Vitest passed 24 test files with 136 tests. ReleaseBench reported all 12 repository-release surfaces present, and the production dependency audit found zero vulnerabilities. These results verify the working tree only; they do not upgrade any external evidence item or identify the eventual release commit.
+The complete repository check passed on 2026-08-29 for the working candidate: build succeeded and Vitest passed 24 test files with 137 tests. ReleaseBench reported all 12 repository-release surfaces present, and the production dependency audit found zero vulnerabilities. These results verify the working tree only; they do not upgrade any external evidence item or identify the eventual release commit.
 
 See [`RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) for the evidence gates and owner handoff.
 

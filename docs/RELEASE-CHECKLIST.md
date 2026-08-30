@@ -6,7 +6,7 @@ This checklist separates repository verification from external evidence. A check
 
 ## 1. Repository candidate
 
-- [x] `npm run check` passes: 24 test files, 136/136 tests (2026-08-29).
+- [x] `npm run check` passes: 24 test files, 137/137 tests (2026-08-29).
 - [x] Documentation checks pass: local Markdown links resolve, the Mermaid sequence is present, and no invalid control bytes are present (2026-08-29).
 - [x] Working diff includes the reviewed Run Now, trust-gate, WSL relay/setup, UI, test, and documentation changes; no credential, private runtime state, or TrueForge database is included.
 - [x] Release-notes draft exists at [`RELEASE-NOTES-v0.1.0-rc1.md`](RELEASE-NOTES-v0.1.0-rc1.md).
@@ -38,7 +38,7 @@ Screenshot/GIF/video status: **pending capture**.
 ## 4. Release notes and owner gate
 
 - [x] Release-notes draft describes behavior supported by the working candidate and labels pending release gates.
-- [x] Record current validation results: complete check passed with 24 test files and 136/136 tests; the genuine run verifier passed every check.
+- [x] Record current validation results: complete check passed with 24 test files and 137/137 tests; the genuine run verifier passed every check.
 - [ ] Add the final candidate commit and external evidence links only after they exist.
 - [ ] Owner reviews the exact repository, live URL, genuine-run receipt, Qodo evidence, media, and release notes as one candidate set.
 - [ ] Owner explicitly authorizes any push, deployment, GitHub release, or hackathon/Google submission.
