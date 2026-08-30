@@ -1,14 +1,27 @@
 # TruthLease
 
+## Run it with your own integrations
+
+Anyone can inspect the hosted demo, but a real **Run now** loop uses your own local integrations. Start TruthLease and TrueForge locally, then connect your model provider and Bright Data from the local TrueForge Settings page at `http://127.0.0.1:8790/settings`.
+
+- **OpenAI is the tested/default model provider.** Other TrueForge-supported providers are compatibility candidates, but are not verified and may require changing the model identifier in the current agent manifest.
+- **Bright Data is required for qualifying live evidence.** Connect it as the `bright-data` MCP in local TrueForge.
+- **Put credentials only in local TrueForge Settings.** Never put them in `truthlease.vercel.app`, the TruthLease UI, `truthlease-local`, the repository, or a committed `.env` file.
+- **The hosted site has zero approval or mutation authority.** A real local run still pauses in TrueForge for native human approval before any state mutation, then performs a fresh post-action verification.
+
+See the copy-paste Windows/WSL setup, service ports, integration names, Run Now sequence, troubleshooting, optional local scheduling boundary, and complete security model in **[Run TruthLease with your own integrations](docs/BYOC-SETUP.md)**.
+
 [![CI](https://github.com/gptexplorer9-creator/truthlease/actions/workflows/ci.yml/badge.svg)](https://github.com/gptexplorer9-creator/truthlease/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Live ledger](https://img.shields.io/badge/live-truthlease.vercel.app-088177)](https://truthlease.vercel.app)
 
-TruthLease stops consequential agents from acting on yesterday’s truth.
+TruthLease stops consequential agents from acting on yesterday's truth.
 
 An agent action can be valid when taken and become invalid later. A recall, policy change, correction, or revoked permission can invalidate the fact that authorized an earlier decision. TruthLease records that dependency, finds the smallest safe correction, pauses at a genuine human approval boundary, applies only the approved change, and performs a fresh persisted-state re-read.
 
-The repository encodes one owned synthetic retailer case: a listing was published while Truth Lease `TL-042`’s condition held; CPSC recall `26-719` later matches item `2012261001` and batch `0925`. One listing matches both identifiers. Two near matches share only one identifier and must remain untouched.
+The repository encodes one owned synthetic retailer case: a listing was published while Truth Lease `TL-042`'s condition held; CPSC recall `26-719` later matches item `2012261001` and batch `0925`. One listing matches both identifiers. Two near matches share only one identifier and must remain untouched.
+
+> **Experimental reference implementation.** TruthLease is a controlled hackathon demonstration, not a production retailer integration or a substitute for legal, safety, compliance, or operational review. Operators remain responsible for the evidence they accept and every effect they approve. Native human approval is a safeguard, not a guarantee. Do not connect customer or production systems without your own security, privacy, reliability, and domain review.
 
 Start with the [58-second judge demo](docs/DEMO-60-SECONDS.md), then use the [2-3 minute judge journey](docs/DEMO-JOURNEY.md) and [release checklist](docs/RELEASE-CHECKLIST.md) to keep repository, genuine-run, review, live-URL, media, and submission evidence separate. The [product decision record](docs/0001-product-thesis-and-p0.md) defines the P0 cut line.
 
@@ -28,16 +41,16 @@ Bright Data is the qualifying web transport; CPSC is the source authority. TrueF
 
 ## What the current candidate supports
 
-Candidate `49769bf04146c8b402076ef56e2c34d7d1a1a93a` passes the complete repository check: 22 test files and 122/122 tests. That result verifies controlled code behavior. It does not prove that an external service ran or that the deployed site contains a genuine case.
+The current working candidate passes the repository's build and test checks; the exact final commit and test receipt will be recorded only after the genuine-run and release gates close. Repository checks verify controlled code behavior. They do not prove that an external service ran or that the deployed site contains a genuine case.
 
 | Surface | Repository-supported status | External evidence status |
 | --- | --- | --- |
 | Demo case | Seed state contains `TL-042`, one exact listing, and two one-field near matches | Owned synthetic state; never present as a production retailer |
-| Bright Data path | Agent manifest allows the canonical CPSC retrieval only through Bright Data Web MCP | Current live trace pending |
+| Bright Data path | Agent manifest allows the canonical CPSC retrieval only through Bright Data Web MCP | Canonical retrieval has succeeded in a current local run; complete end-to-end run receipt remains pending |
 | Deterministic analysis | Analyzer and tests require exactly one item+batch match and list near-match exclusions | Current native sandbox event and execution response pending |
-| Native approval | Manifest requires approval for `apply_containment_patch` | Current genuine TrueForge approval event pending |
-| Local MCP containment | Evidence-bound, version-checked, atomic, idempotent mutation is implemented and integration-tested | Current genuine mutation receipt pending |
-| Post-action verification | `verify_containment_state` performs a new owned-state read and checks exact and near-match outcomes | Current persisted-state re-read receipt pending |
+| Native approval | Manifest requires approval for `apply_containment_patch` | Genuine native approval completed in the [2026-08-30 run](docs/evidence/GENUINE-RUN-2026-08-30.md) |
+| Local MCP containment | Evidence-bound, version-checked, atomic, idempotent mutation is implemented and integration-tested | Genuine receipt records version `7 -> 8`, lease revocation, and only the exact listing unpublished |
+| Post-action verification | `verify_containment_state` performs a new owned-state read and checks exact and near-match outcomes | Genuine later read returned `VERIFIED`; both one-field near matches remained unchanged |
 | Hosted case ledger | Read-only case surfaces, append-only ingestion, and outbound connector are implemented and tested | [truthlease.vercel.app](https://truthlease.vercel.app) exists, but deployment of this exact candidate is unverified and its ledger is empty until a genuine run is ingested |
 | Qodo | Review-driven fixes are present in the candidate | Final review evidence must be attached to the exact promoted commit |
 | Demo media | Journey and evidence map are documented | Screenshot/GIF/video pending |
@@ -50,7 +63,7 @@ Repository tests use controlled inputs, synthetic state, and test authorization.
 Requirements: Node.js 22.14 or newer.
 
 ```powershell
-npm install
+npm ci
 npm run state:reset
 npm run check
 npm run dev
@@ -62,23 +75,13 @@ Resetting state restores the owned synthetic retailer seed. Do not use the reset
 
 ## Qualifying-run setup
 
-Start the pinned TrueForge package in a second terminal:
+Use the authoritative [bring-your-own-integrations guide](docs/BYOC-SETUP.md). It pins the verified WSL/TrueForge path, explains exactly where credentials belong, starts the narrow MCP relay, and preserves the required sequence:
 
-```powershell
-npm run trueforge
-```
-
-Then:
-
-1. Configure a model in the local TrueForge runtime.
-2. Add the local MCP URL under the connector name `truthlease-local`.
-3. On Ubuntu/WSL, install `python3.12-venv` for TrueForge’s native local sandbox.
-4. Create the agent from [`config/trueforge-agent-manifest.json`](config/trueforge-agent-manifest.json).
-5. Run the configured `TL-042` case.
-6. Confirm the Bright Data trace points to the allow-listed canonical CPSC URL.
-7. Confirm the native sandbox event and execution response show one exact match and two excluded near matches.
-8. Do not approve until TrueForge displays the exact immutable `apply_containment_patch` snake_case arguments.
-9. After approval and mutation, require a later `verify_containment_state` read before calling the case complete.
+1. Live CPSC evidence through the connected `bright-data` MCP.
+2. Native TrueForge sandbox analysis of one exact item-and-batch match and two excluded near matches.
+3. A genuine native TrueForge approval pause showing immutable `apply_containment_patch` arguments.
+4. One atomic, evidence-bound mutation through `truthlease-local`.
+5. A later `verify_containment_state` persisted-state re-read.
 
 If any qualifying evidence is missing, stop and label that evidence pending. A fixture, direct parser, prompt-level confirmation, screenshot, hosted shell, or empty ledger cannot substitute for the corresponding genuine event.
 
@@ -88,7 +91,7 @@ The current candidate implements a same-origin application for a case index, app
 
 The outbound operator connector is designed to read one genuine TrueForge session through its loopback API and append authenticated event batches to `POST /api/connectors/:connectorId/events`. It cannot approve or mutate. Transport uses a bearer credential, while provenance attestation requires a separate HMAC secret; neither can substitute for the other. TrueForge remains the native approval authority; the local TruthLease MCP remains the mutation authority. See [`docs/CONNECTOR.md`](docs/CONNECTOR.md).
 
-The hosted shell currently exists at [truthlease.vercel.app](https://truthlease.vercel.app), but it has not been verified as a deployment of candidate `49769bf04146c8b402076ef56e2c34d7d1a1a93a`. Its empty case index means no genuine run has been ingested. Do not synthesize a demo case, cite the shell as workflow evidence, or describe it as the candidate deployment until the exact commit is deployed and verified with owner authorization.
+The hosted shell currently exists at [truthlease.vercel.app](https://truthlease.vercel.app), but deployment of the final working candidate must still be verified after the release commit is pushed. An empty case index is not genuine run evidence. Do not synthesize a demo case or cite the shell as workflow evidence until the exact commit and live behavior are verified.
 
 ## Safety properties
 

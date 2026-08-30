@@ -57,6 +57,44 @@ describe("RetailerStore", () => {
     expect(state.evidenceReceipts).toHaveLength(1);
   });
 
+  it("returns the original evidence receipt for an exact evidence retry", async () => {
+    const store = await testStore();
+    await store.reset();
+    const first = await store.recordRecallEvidence(evidenceInput);
+    const second = await store.recordRecallEvidence(evidenceInput);
+    const state = await store.read();
+
+    expect(second.idempotentReplay).toBe(true);
+    expect(second.receipt.id).toBe(first.receipt.id);
+    expect(state.evidenceReceipts).toHaveLength(1);
+  });
+
+  it("creates a distinct receipt when the same content is retrieved again later", async () => {
+    const store = await testStore();
+    await store.reset();
+    const first = await store.recordRecallEvidence(evidenceInput);
+    const second = await store.recordRecallEvidence({
+      ...evidenceInput,
+      retrievedAt: "2026-08-29T19:56:00.000Z",
+    });
+    const state = await store.read();
+
+    expect(second.idempotentReplay).toBe(false);
+    expect(second.receipt.id).not.toBe(first.receipt.id);
+    expect(second.receipt.contentSha256).toBe(first.receipt.contentSha256);
+    expect(state.evidenceReceipts).toHaveLength(2);
+  });
+
+  it("rejects changed metadata for the same evidence retrieval occurrence", async () => {
+    const store = await testStore();
+    await store.reset();
+    await store.recordRecallEvidence(evidenceInput);
+
+    await expect(
+      store.recordRecallEvidence({ ...evidenceInput, title: "Changed title" }),
+    ).rejects.toThrow(/different metadata/i);
+  });
+
   it("atomically revokes the lease, unpublishes one listing, and verifies near matches", async () => {
     const store = await testStore();
     const { request } = await prepare(store);

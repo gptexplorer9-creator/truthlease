@@ -113,6 +113,8 @@ describe("TruthLease MCP P0 mutation contract", () => {
     });
     expect(mutation.isError).not.toBe(true);
     expect(mutationAuthorizationInput).toEqual(sandboxPlan);
+    const mutationResult = textResult<{ enforcedVerification: { passed: boolean; verdict: string } }>(mutation);
+    expect(mutationResult.enforcedVerification).toMatchObject({ passed: true, verdict: "VERIFIED" });
 
     const verification = await client.callTool({
       name: "verify_containment_state",

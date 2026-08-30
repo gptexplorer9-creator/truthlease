@@ -3056,3 +3056,116 @@ select:focus-visible {
     min-width: 520px;
   }
 }
+
+.run-now-control {
+  position: fixed;
+  z-index: 80;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  width: min(390px, calc(100vw - 32px));
+  gap: 0.85rem;
+  border: 1px solid var(--rule-strong);
+  border-left: 3px solid var(--brand);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px rgb(23 33 43 / 18%);
+  padding: 1rem;
+}
+
+.run-now-control[hidden] {
+  display: none;
+}
+
+.run-now-control__eyebrow {
+  margin: 0 0 0.18rem;
+  color: var(--brand-text);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.run-now-control h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.run-now-control__status,
+.run-now-control__boundary {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.run-now-control__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.run-now-control button,
+.run-now-control a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 0.55rem 0.9rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.run-now-control button {
+  border: 1px solid var(--brand);
+  background: var(--brand);
+  color: #fff;
+  cursor: pointer;
+}
+
+.run-now-control button:hover:not(:disabled) {
+  background: var(--brand-text);
+}
+
+.run-now-control button:disabled {
+  border-color: var(--rule-strong);
+  background: var(--subtle);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.run-now-control a {
+  border: 1px solid var(--rule-strong);
+  color: var(--brand-text);
+  text-decoration: none;
+}
+
+.run-now-control a.run-now-control__primary-link {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.run-now-control a.run-now-control__primary-link:hover {
+  background: var(--brand-text);
+}
+
+.run-now-control button:focus-visible,
+.run-now-control a:focus-visible {
+  outline: 3px solid #7cc3cf;
+  outline-offset: 2px;
+}
+
+.run-now-control__boundary {
+  border-top: 1px solid var(--rule);
+  padding-top: 0.7rem;
+}
+
+@media (max-width: 520px) {
+  .run-now-control {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+  }
+}

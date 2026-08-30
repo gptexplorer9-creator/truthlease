@@ -25,11 +25,14 @@
     "evidence:verify": "tsx scripts/verify-trueforge-session.ts",
     "connector:run": "tsx scripts/run-connector.ts",
     "ledger:migrate": "tsx scripts/migrate-ledger.ts",
+    "mcp:relay:wsl": "tsx scripts/wsl-mcp-relay.ts",
     "start": "node dist/src/server.js",
     "state:reset": "tsx scripts/reset-state.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "trueforge": "npx --yes @truefoundry/trueforge@0.1.4 --port 8790"
+    "trueforge": "npx --yes @truefoundry/trueforge@0.1.4 --port 8790",
+    "trueforge:wsl:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-trueforge-wsl.ps1 setup",
+    "trueforge:wsl": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-trueforge-wsl.ps1 run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

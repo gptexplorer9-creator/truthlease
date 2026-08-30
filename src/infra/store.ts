@@ -79,11 +79,17 @@ export class RetailerStore {
   ): Promise<RecordRecallEvidenceResult> {
     this.validateOfficialEvidence(input);
     const contentSha256 = createHash("sha256").update(input.evidenceText, "utf8").digest("hex");
+    const retrievedAt = new Date(input.retrievedAt).toISOString();
+    const receiptIdentitySha256 = createHash("sha256")
+      .update(contentSha256, "utf8")
+      .update("\0", "utf8")
+      .update(retrievedAt, "utf8")
+      .digest("hex");
     const receipt: EvidenceReceipt = {
-      id: `EV-${contentSha256.slice(0, 16).toUpperCase()}`,
+      id: `EV-${receiptIdentitySha256.slice(0, 16).toUpperCase()}`,
       provider: "bright-data",
       sourceUrl: input.sourceUrl,
-      retrievedAt: new Date(input.retrievedAt).toISOString(),
+      retrievedAt,
       recordedAt: this.now().toISOString(),
       recallNumber: input.recallNumber.trim(),
       title: input.title.trim(),
