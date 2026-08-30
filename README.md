@@ -1,12 +1,16 @@
 # TruthLease
 
+[![CI](https://github.com/gptexplorer9-creator/truthlease/actions/workflows/ci.yml/badge.svg)](https://github.com/gptexplorer9-creator/truthlease/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Live ledger](https://img.shields.io/badge/live-truthlease.vercel.app-088177)](https://truthlease.vercel.app)
+
 TruthLease stops consequential agents from acting on yesterday’s truth.
 
 An agent action can be valid when taken and become invalid later. A recall, policy change, correction, or revoked permission can invalidate the fact that authorized an earlier decision. TruthLease records that dependency, finds the smallest safe correction, pauses at a genuine human approval boundary, applies only the approved change, and performs a fresh persisted-state re-read.
 
 The repository encodes one owned synthetic retailer case: a listing was published while Truth Lease `TL-042`’s condition held; CPSC recall `26-719` later matches item `2012261001` and batch `0925`. One listing matches both identifiers. Two near matches share only one identifier and must remain untouched.
 
-Start with the [2–3 minute judge journey](docs/DEMO-JOURNEY.md), then use the [release checklist](docs/RELEASE-CHECKLIST.md) to keep repository, genuine-run, review, live-URL, media, and submission evidence separate. The [product decision record](docs/0001-product-thesis-and-p0.md) defines the P0 cut line.
+Start with the [58-second judge demo](docs/DEMO-60-SECONDS.md), then use the [2-3 minute judge journey](docs/DEMO-JOURNEY.md) and [release checklist](docs/RELEASE-CHECKLIST.md) to keep repository, genuine-run, review, live-URL, media, and submission evidence separate. The [product decision record](docs/0001-product-thesis-and-p0.md) defines the P0 cut line.
 
 ## P0 journey
 
