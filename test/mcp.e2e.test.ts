@@ -29,6 +29,8 @@ describe("TruthLease MCP P0 mutation contract", () => {
   let evidenceAuthorizationCount: number;
   let mutationAuthorizationInput: unknown;
   let rejectEvidence: boolean;
+  let authorizationCommitCount: number;
+  let authorizationReleaseCount: number;
 
   beforeEach(async () => {
     const directory = await mkdtemp(join(tmpdir(), "truthlease-mcp-"));
@@ -40,13 +42,21 @@ describe("TruthLease MCP P0 mutation contract", () => {
     evidenceAuthorizationCount = 0;
     mutationAuthorizationInput = undefined;
     rejectEvidence = false;
+    authorizationCommitCount = 0;
+    authorizationReleaseCount = 0;
+    const authorization = () => ({
+      commit: () => { authorizationCommitCount += 1; },
+      release: () => { authorizationReleaseCount += 1; },
+    });
     trustGate = {
       authorizeEvidence: async () => {
         evidenceAuthorizationCount += 1;
         if (rejectEvidence) throw new Error("unbound evidence trace");
+        return authorization();
       },
       authorizeMutation: async (input) => {
         mutationAuthorizationInput = input;
+        return authorization();
       },
     };
     httpServer = createServer(createApp(store, { trustGate }));
@@ -111,6 +121,8 @@ describe("TruthLease MCP P0 mutation contract", () => {
     expect(verification.isError).not.toBe(true);
     const result = textResult<{ passed: boolean; verdict: string }>(verification);
     expect(result).toMatchObject({ passed: true, verdict: "VERIFIED" });
+    expect(authorizationCommitCount).toBe(2);
+    expect(authorizationReleaseCount).toBe(0);
   });
 
   it("fails closed when the server trust gate cannot bind evidence to TrueForge", async () => {
@@ -135,5 +147,28 @@ describe("TruthLease MCP P0 mutation contract", () => {
 
     expect(result.isError).toBe(true);
     expect(evidenceAuthorizationCount).toBe(1);
+  });
+
+  it("releases a reserved authorization when durable evidence persistence fails", async () => {
+    const result = await client.callTool({
+      name: "record_recall_evidence",
+      arguments: {
+        source_url: "https://example.com/Recalls/forged",
+        retrieved_at: new Date().toISOString(),
+        recall_number: "26-719",
+        title: "Forged recall",
+        product_name: "HABA Rainbow Rattle",
+        recall_date: "August 27, 2026",
+        hazard: "Choking and ingestion hazards",
+        description: "This request must fail at the durable evidence boundary.",
+        item_number: "2012261001",
+        batch_code: "0925",
+        evidence_text: "26-719 2012261001 0925",
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(authorizationCommitCount).toBe(0);
+    expect(authorizationReleaseCount).toBe(1);
   });
 });

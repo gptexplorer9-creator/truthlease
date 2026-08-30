@@ -44,6 +44,7 @@ interface ToolCallRecord {
 
 interface IndexedToolCall extends ToolCallRecord {
   eventIndex: number;
+  turnId: string;
 }
 
 interface IndexedEvent {
@@ -58,6 +59,12 @@ interface EvidenceTrace {
   searchResponse: IndexedEvent;
   recordEvidence: IndexedToolCall;
   input: RecordRecallEvidenceInput;
+}
+
+interface SandboxTrace {
+  created: IndexedEvent;
+  exec: IndexedToolCall;
+  response: IndexedEvent;
 }
 
 export interface TrueForgeAuthorizationProof {
@@ -201,8 +208,8 @@ function orderedTrace(entries: TrueForgeEventEntry[]): {
     const byTime = Date.parse(createdAt(left.event)) - Date.parse(createdAt(right.event));
     return byTime !== 0 ? byTime : String(left.event.id).localeCompare(String(right.event.id));
   });
-  const calls = ordered.flatMap(({ event }, eventIndex) =>
-    toolCallsFrom(event).map((call) => ({ ...call, eventIndex })),
+  const calls = ordered.flatMap(({ event, turn_id: turnId }, eventIndex) =>
+    toolCallsFrom(event).map((call) => ({ ...call, eventIndex, turnId })),
   );
   const responses = new Map<string, IndexedEvent>();
   ordered.forEach(({ event }, eventIndex) => {
@@ -211,6 +218,29 @@ function orderedTrace(entries: TrueForgeEventEntry[]): {
     if (callId !== undefined) responses.set(callId, { event, eventIndex });
   });
   return { ordered, calls, responses };
+}
+
+function findSandboxTrace(entries: TrueForgeEventEntry[]): SandboxTrace | undefined {
+  const { ordered, calls, responses } = orderedTrace(entries);
+  for (let eventIndex = 0; eventIndex < ordered.length; eventIndex += 1) {
+    const entry = ordered[eventIndex]!;
+    if (entry.event.type !== "sandbox.created") continue;
+    const candidates = calls.filter((call) =>
+      call.name === "exec" &&
+      (call.serverName === undefined || call.serverName === "trueforge-system") &&
+      call.turnId === entry.turn_id,
+    );
+    for (const exec of candidates) {
+      const response = responses.get(exec.id);
+      if (
+        response !== undefined &&
+        exec.eventIndex < response.eventIndex
+      ) {
+        return { created: { event: entry.event, eventIndex }, exec, response };
+      }
+    }
+  }
+  return undefined;
 }
 
 function evidenceMetadataIsBound(input: RecordRecallEvidenceInput, searchPayload: UnknownRecord): boolean {
@@ -255,43 +285,51 @@ function findEvidenceTrace(
       input.sourceUrl !== P0_CPSC_RECALL_URL ||
       (expectedInput !== undefined && !equalJson(recordCall.arguments, evidenceInputToWire(expectedInput)))
     ) continue;
-    const scrape = calls.find((call) =>
+    const scrapes = calls.filter((call) =>
       call.serverName === "bright-data" &&
       call.name === "scrape_as_markdown" &&
       call.arguments.url === P0_CPSC_RECALL_URL &&
       call.eventIndex < recordCall.eventIndex,
     );
-    const scrapeResponse = scrape === undefined ? undefined : responses.get(scrape.id);
-    const search = calls.find((call) =>
-      call.serverName === "bright-data" &&
-      call.name === "search_engine" &&
-      call.arguments.query === P0_CPSC_FALLBACK_QUERY &&
-      call.arguments.engine === "google" &&
-      call.arguments.geo_location === "us" &&
-      call.arguments.cursor === "" &&
-      call.eventIndex < recordCall.eventIndex,
-    );
-    const searchResponse = search === undefined ? undefined : responses.get(search.id);
-    const searchPayload = searchResponse === undefined ? undefined : parseJsonObject(searchResponse.event.content);
-    const retrievedAt = Date.parse(input.retrievedAt);
-    const searchObservedAt = searchResponse === undefined
-      ? Number.NaN
-      : Date.parse(createdAt(searchResponse.event));
-    if (
-      scrape === undefined || scrapeResponse === undefined ||
-      search === undefined || searchResponse === undefined || searchPayload === undefined ||
-      errorMessage(scrapeResponse.event) !== undefined ||
-      errorMessage(searchResponse.event) !== undefined ||
-      !emptyExternalPayload(scrapeResponse.event) ||
-      !(scrape.eventIndex < scrapeResponse.eventIndex &&
-        scrapeResponse.eventIndex < search.eventIndex &&
-        search.eventIndex < searchResponse.eventIndex &&
-        searchResponse.eventIndex < recordCall.eventIndex) ||
-      !Number.isFinite(retrievedAt) || !Number.isFinite(searchObservedAt) ||
-      Math.abs(retrievedAt - searchObservedAt) > 120_000 ||
-      !evidenceMetadataIsBound(input, searchPayload)
-    ) continue;
-    return { scrape, scrapeResponse, search, searchResponse, recordEvidence: recordCall, input };
+    for (const scrape of scrapes) {
+      const scrapeResponse = responses.get(scrape.id);
+      if (
+        scrapeResponse === undefined ||
+        errorMessage(scrapeResponse.event) !== undefined ||
+        !emptyExternalPayload(scrapeResponse.event) ||
+        scrapeResponse.eventIndex <= scrape.eventIndex
+      ) continue;
+      const searches = calls.filter((call) =>
+        call.serverName === "bright-data" &&
+        call.name === "search_engine" &&
+        call.arguments.query === P0_CPSC_FALLBACK_QUERY &&
+        call.arguments.engine === "google" &&
+        call.arguments.geo_location === "us" &&
+        call.arguments.cursor === "" &&
+        call.eventIndex > scrapeResponse.eventIndex &&
+        call.eventIndex < recordCall.eventIndex,
+      );
+      for (const search of searches) {
+        const searchResponse = responses.get(search.id);
+        const searchPayload = searchResponse === undefined
+          ? undefined
+          : parseJsonObject(searchResponse.event.content);
+        const retrievedAt = Date.parse(input.retrievedAt);
+        const searchObservedAt = searchResponse === undefined
+          ? Number.NaN
+          : Date.parse(createdAt(searchResponse.event));
+        if (
+          searchResponse === undefined || searchPayload === undefined ||
+          errorMessage(searchResponse.event) !== undefined ||
+          searchResponse.eventIndex <= search.eventIndex ||
+          searchResponse.eventIndex >= recordCall.eventIndex ||
+          !Number.isFinite(retrievedAt) || !Number.isFinite(searchObservedAt) ||
+          Math.abs(retrievedAt - searchObservedAt) > 120_000 ||
+          !evidenceMetadataIsBound(input, searchPayload)
+        ) continue;
+        return { scrape, scrapeResponse, search, searchResponse, recordEvidence: recordCall, input };
+      }
+    }
   }
   return undefined;
 }
@@ -467,11 +505,10 @@ export function buildCaseEventFeed(
   }
 
   const generated: Array<{ type: RunEventType; source: UnknownRecord; payload: UnknownRecord }> = [];
-  const sandbox = ordered.map(({ event }) => event).find((event) => event.type === "sandbox.created");
-  const sandboxExec = [...toolCalls.values()].find(
-    (call) => call.name === "exec" && record(call.event.tool_calls) === undefined,
-  ) ?? [...toolCalls.values()].find((call) => call.name === "exec");
-  const sandboxResponse = sandboxExec === undefined ? undefined : responses.get(sandboxExec.id);
+  const sandboxTrace = findSandboxTrace(entries);
+  const sandbox = sandboxTrace?.created.event;
+  const sandboxExec = sandboxTrace?.exec;
+  const sandboxResponse = sandboxTrace?.response.event;
 
   for (const call of toolCalls.values()) {
     const response = responses.get(call.id);
@@ -728,9 +765,25 @@ export function verifyP0SessionEvents(
   const evidenceTrace = findEvidenceTrace(entries);
   const recordEvidence = evidenceTrace?.recordEvidence;
   const recordResponse = recordEvidence === undefined ? undefined : indexedResponses.get(recordEvidence.id);
-  const sandboxCreatedIndex = ordered.findIndex(({ event }) => event.type === "sandbox.created");
-  const sandboxExec = indexedCalls.find((call) => call.name === "exec");
-  const sandboxResponse = sandboxExec === undefined ? undefined : indexedResponses.get(sandboxExec.id);
+  const sandboxTrace = findSandboxTrace(entries);
+  const sandboxCreatedIndex = sandboxTrace?.created.eventIndex ?? -1;
+  const sandboxExec = sandboxTrace?.exec;
+  const sandboxResponse = sandboxTrace?.response;
+  const successfulReadBeforeSandbox = (name: string) => indexedCalls
+    .map((call) => ({ call, response: indexedResponses.get(call.id) }))
+    .find(({ call, response }) =>
+      call.name === name &&
+      call.serverName === "truthlease-local" &&
+      sandboxExec !== undefined &&
+      call.eventIndex < sandboxExec.eventIndex &&
+      response !== undefined &&
+      response.eventIndex > call.eventIndex &&
+      response.eventIndex < sandboxExec.eventIndex &&
+      errorMessage(response.event) === undefined &&
+      responsePayload(response.event) !== undefined,
+    );
+  const leaseRead = successfulReadBeforeSandbox("get_truth_lease");
+  const stateRead = successfulReadBeforeSandbox("get_retailer_state");
   const applyCalls = indexedCalls.filter((call) => call.name === "apply_containment_patch");
   const apply = applyCalls[0];
   const approvalRequiredIndex = apply === undefined
@@ -786,6 +839,10 @@ export function verifyP0SessionEvents(
     evidenceTrace?.searchResponse.eventIndex ?? -1,
     recordEvidence?.eventIndex ?? -1,
     recordResponse?.eventIndex ?? -1,
+    leaseRead?.call.eventIndex ?? -1,
+    leaseRead?.response?.eventIndex ?? -1,
+    stateRead?.call.eventIndex ?? -1,
+    stateRead?.response?.eventIndex ?? -1,
     sandboxExec?.eventIndex ?? -1,
     sandboxResponse?.eventIndex ?? -1,
     sandboxCreatedIndex,
@@ -822,6 +879,14 @@ export function verifyP0SessionEvents(
         sandboxResponse !== undefined &&
         sandboxExecutionSucceeded(sandboxResponse.event),
       observed: sandboxCreatedIndex < 0 ? null : ordered[sandboxCreatedIndex]?.event.sandbox_id,
+    },
+    {
+      name: "TruthLease successfully read the lease and retailer state before sandbox analysis",
+      passed: leaseRead !== undefined && stateRead !== undefined,
+      observed: {
+        leaseCallId: leaseRead?.call.id ?? null,
+        stateCallId: stateRead?.call.id ?? null,
+      },
     },
     {
       name: "sandbox emitted the exact snake_case mutation wire contract",

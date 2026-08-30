@@ -279,4 +279,50 @@ describe("TrueForge case feed", () => {
       expected_version: 99,
     })).toBeUndefined();
   });
+
+  it("rejects an exec that is not bound to the created sandbox turn", () => {
+    const entries = qualifyingEntries();
+    entries[12]!.turn_id = "unrelated-turn";
+
+    expect(verifyP0SessionEvents(sessionId, entries).passed).toBe(false);
+    expect(
+      buildCaseEventFeed("TL-042", sessionId, entries).events.some(
+        (item) => item.type === "analysis.completed",
+      ),
+    ).toBe(false);
+  });
+
+  it("requires successful lease and retailer-state responses before analysis", () => {
+    const entries = qualifyingEntries();
+    entries[9]!.event.content = JSON.stringify({ error: "state read failed" });
+
+    const verification = verifyP0SessionEvents(sessionId, entries);
+
+    expect(verification.passed).toBe(false);
+    expect(
+      verification.checks.find((check) => check.name.includes("before sandbox analysis"))?.passed,
+    ).toBe(false);
+  });
+
+  it("accepts a later canonical Bright Data retry after an incomplete first attempt", () => {
+    const entries = [
+      call(-4, "scrape-incomplete", "scrape_as_markdown", {
+        url: P0_CPSC_RECALL_URL,
+      }, "bright-data"),
+      event(-3, {
+        type: "tool.response",
+        tool_call_id: "scrape-incomplete",
+        content: "",
+      }),
+      call(-2, "search-incomplete", "search_engine", {
+        query: P0_CPSC_FALLBACK_QUERY,
+        engine: "google",
+        cursor: "",
+        geo_location: "us",
+      }, "bright-data"),
+      ...qualifyingEntries(),
+    ];
+
+    expect(verifyP0SessionEvents(sessionId, entries).passed).toBe(true);
+  });
 });

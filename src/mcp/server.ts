@@ -91,8 +91,15 @@ export function createTruthLeaseMcpServer(
           batchCode: batch_code,
           evidenceText: evidence_text,
         };
-        await trustGate.authorizeEvidence(input);
-        return jsonResult(await store.recordRecallEvidence(input));
+        const authorization = await trustGate.authorizeEvidence(input);
+        try {
+          const result = await store.recordRecallEvidence(input);
+          authorization.commit();
+          return jsonResult(result);
+        } catch (error) {
+          authorization.release();
+          throw error;
+        }
       } catch (error) {
         return errorResult(error);
       }
@@ -161,8 +168,15 @@ export function createTruthLeaseMcpServer(
     },
     async (input) => {
       try {
-        await trustGate.authorizeMutation(input);
-        return jsonResult(await store.applyContainmentPatch(input));
+        const authorization = await trustGate.authorizeMutation(input);
+        try {
+          const result = await store.applyContainmentPatch(input);
+          authorization.commit();
+          return jsonResult(result);
+        } catch (error) {
+          authorization.release();
+          throw error;
+        }
       } catch (error) {
         return errorResult(error);
       }
