@@ -90,12 +90,16 @@ function analysisHasContract(event: RunEvent<"analysis.completed"> | undefined):
   const payload = event?.payload;
   const rule = objectValue(payload, "rule") ?? objectValue(payload, "match_rule") ?? payload;
   const exact = objectValue(payload, "exact_match") ?? objectValue(payload, "exactMatch");
+  const ruleItem = firstString(rule, "item_number", "itemNumber");
+  const ruleBatch = firstString(rule, "batch_code", "batchCode");
+  const exactItem = firstString(exact, "item_number", "itemNumber");
+  const exactBatch = firstString(exact, "batch_code", "batchCode");
   return (
-    firstString(rule, "item_number", "itemNumber") !== undefined &&
-    firstString(rule, "batch_code", "batchCode") !== undefined &&
+    ruleItem !== undefined &&
+    ruleBatch !== undefined &&
     firstString(exact, "listing_id", "listingId", "id") !== undefined &&
-    firstString(exact, "item_number", "itemNumber") !== undefined &&
-    firstString(exact, "batch_code", "batchCode") !== undefined
+    exactItem === ruleItem &&
+    exactBatch === ruleBatch
   );
 }
 
@@ -110,9 +114,13 @@ function patchHasContract(event: RunEvent<"patch.applied"> | undefined): boolean
 
 function verificationHasContract(event: RunEvent<"verification.completed"> | undefined): boolean {
   if (!event) return false;
+  const lease = objectValue(event.payload, "lease");
+  const listing = objectValue(event.payload, "listing");
   return (
-    hasIdentityStatus(objectValue(event.payload, "lease"), ["lease_id", "leaseId", "id"]) &&
-    hasIdentityStatus(objectValue(event.payload, "listing"), ["listing_id", "listingId", "id"])
+    firstString(lease, "lease_id", "leaseId", "id") !== undefined &&
+    firstString(lease, "status")?.toLowerCase() === "revoked" &&
+    firstString(listing, "listing_id", "listingId", "id") !== undefined &&
+    firstString(listing, "status", "publication_status", "publicationStatus")?.toLowerCase() === "unpublished"
   );
 }
 
@@ -234,11 +242,11 @@ export function buildCaseViewModel(input: {
       "The proof event does not follow the evidence receipt in the causal order, so the UI will not render proof complete.",
     );
   } else if (analysis && !analysisHasContract(analysis)) {
-    addWarning(warnings, "Analysis completed without the required exact-match contract data.");
+    addWarning(warnings, "Analysis completed without an exact match equal to the declared item-and-batch rule.");
     setStageNote(
       stageNotes,
       "proof",
-      "The proof event is missing the exact-match contract fields needed to prove one listing and its exclusions.",
+      "The proof event does not identify one listing whose item and batch exactly equal the declared rule.",
     );
   }
 
@@ -391,11 +399,11 @@ export function buildCaseViewModel(input: {
       "The verification event is out of order relative to the applied patch receipt, so the UI will not render a verified completion.",
     );
   } else if (verification && verificationPassed && !verificationHasContract(verification)) {
-    addWarning(warnings, "Verification completed without the persisted lease/listing evidence required for a green verdict.");
+    addWarning(warnings, "Verification completed without a revoked lease and unpublished listing identified in persisted state.");
     setStageNote(
       stageNotes,
       "verified",
-      "The verification event reports success but omits the persisted lease/listing evidence required for a green verified state.",
+      "The verification event reports success but does not prove an identified revoked lease and identified unpublished listing.",
     );
   }
 

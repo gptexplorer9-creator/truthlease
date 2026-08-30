@@ -114,18 +114,22 @@ describe("case index transport", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it("fails closed when pagination exceeds its bounded request budget", async () => {
+  it("continues beyond twenty pages until the server ends pagination", async () => {
     let page = 0;
-    const fetch = vi.fn(async () => {
+    const fetch = vi.fn(async (_input: string | URL, _init?: RequestInit) => {
       page += 1;
       return new Response(JSON.stringify({
         cases: [{ caseId: `TL-${String(page).padStart(3, "0")}` }],
-        nextCursor: `cursor-${page}`,
+        ...(page <= 20 ? { nextCursor: `cursor-${page}` } : {}),
       }), { status: 200, headers: { "content-type": "application/json" } });
     });
     const source = new HttpCaseIndexSource({ fetch });
 
-    await expect(source.loadCases()).rejects.toThrow(/20-page safety limit/);
-    expect(fetch).toHaveBeenCalledTimes(20);
+    const feed = await source.loadCases();
+
+    expect(feed.cases).toHaveLength(21);
+    expect(feed.cases.at(-1)?.caseId).toBe("TL-021");
+    expect(fetch).toHaveBeenCalledTimes(21);
+    expect(fetch.mock.calls.at(-1)?.[0]).toBe("/api/cases?cursor=cursor-20");
   });
 });

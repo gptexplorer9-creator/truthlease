@@ -1,4 +1,3 @@
-const MAX_CASE_INDEX_PAGES = 20;
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -84,7 +83,7 @@ export class HttpCaseIndexSource {
         const caseIds = new Set();
         const cursors = new Set();
         let cursor;
-        for (let pageNumber = 0; pageNumber < MAX_CASE_INDEX_PAGES; pageNumber += 1) {
+        while (true) {
             const separator = this.#basePath.includes("?") ? "&" : "?";
             const url = cursor === undefined
                 ? this.#basePath
@@ -124,6 +123,5 @@ export class HttpCaseIndexSource {
             cursors.add(page.nextCursor);
             cursor = page.nextCursor;
         }
-        throw new Error(`Case index pagination exceeded the ${MAX_CASE_INDEX_PAGES}-page safety limit.`);
     }
 }

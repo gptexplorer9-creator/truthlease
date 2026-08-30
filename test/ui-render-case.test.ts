@@ -118,6 +118,21 @@ describe("operational case-file renderer", () => {
     expect(replayHtml).toContain("No second mutation was applied");
   });
 
+  it("withholds the verified banner when persisted statuses do not prove containment", () => {
+    const invalidVerification = fixtureEvent(7, "verification.completed", {
+      passed: true,
+      lease: { lease_id: "TL-042", status: "active" },
+      listing: { listing_id: "LISTING-1001", status: "published" },
+    });
+    const html = renderCaseHtml(
+      buildCaseViewModel(completeFeed([...completeEvents.slice(0, 6), invalidVerification])),
+    );
+
+    expect(html).toContain("Verification not accepted");
+    expect(html).not.toContain("Persisted result confirmed");
+    expect(html).not.toContain("stage stage--verified");
+  });
+
   it("renders stale evidence as a blocking state", () => {
     const staleEvidence = fixtureEvent(2, "evidence.fetched", {
       stale: true,

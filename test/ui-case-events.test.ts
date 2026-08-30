@@ -133,6 +133,51 @@ describe("case event transport", () => {
     ).rejects.toThrow(/complete event history from cursor zero/);
   });
 
+  it("rejects gaps in a cursor-zero replacement history", async () => {
+    const first = { ...completeEvents[0]!, id: "replacement-1", runId: "run-replacement" };
+    const third = {
+      ...completeEvents[2]!,
+      id: "replacement-3",
+      runId: "run-replacement",
+      sequence: 3,
+    };
+    const loadCase = vi
+      .fn()
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "running",
+        lastSequence: 3,
+        events: [],
+      })
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "running",
+        lastSequence: 3,
+        events: [first, third],
+      });
+
+    await expect(
+      loadCaseFeedForPolling({ loadCase }, "TL-042", completeFeed().runId, 7),
+    ).rejects.toThrow(/complete event history from cursor zero/);
+  });
+
+  it("accepts an empty replacement run only when lastSequence is zero", async () => {
+    const empty = {
+      caseId: "TL-042",
+      runId: "run-replacement",
+      status: "running",
+      lastSequence: 0,
+      events: [],
+    };
+    const loadCase = vi.fn().mockResolvedValueOnce(empty).mockResolvedValueOnce(empty);
+
+    await expect(
+      loadCaseFeedForPolling({ loadCase }, "TL-042", completeFeed().runId, 7),
+    ).resolves.toEqual(empty);
+  });
+
   it("merges only newer event IDs and rejects semantic ID reuse", () => {
     expect(mergeCaseEvents(completeEvents.slice(0, 2), completeEvents.slice(2))).toHaveLength(7);
     expect(

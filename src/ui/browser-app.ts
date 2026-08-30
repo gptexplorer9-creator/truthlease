@@ -74,11 +74,10 @@ export async function loadCaseFeedForPolling(
   if (currentRunId === undefined || feed.runId === currentRunId) return feed;
 
   const refreshed = await source.loadCase(caseId, undefined, signal);
-  const finalSequence = refreshed.events.at(-1)?.sequence;
-  if (
-    (refreshed.lastSequence === 0 && refreshed.events.length !== 0) ||
-    (refreshed.lastSequence > 0 && finalSequence !== refreshed.lastSequence)
-  ) {
+  const completeHistory =
+    refreshed.events.length === refreshed.lastSequence &&
+    refreshed.events.every((event, index) => event.sequence === index + 1);
+  if (!completeHistory) {
     throw new Error("The replacement run did not return a complete event history from cursor zero.");
   }
   return refreshed;

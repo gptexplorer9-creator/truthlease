@@ -41,6 +41,56 @@ describe("deterministic case state", () => {
     expect(model.stages[4]?.status).toBe("failed");
   });
 
+  it("rejects an exact match whose item or batch differs from the declared rule", () => {
+    const mismatchedAnalysis = fixtureEvent(3, "analysis.completed", {
+      ...completeEvents[2]!.payload,
+      exact_match: {
+        listing_id: "LISTING-1001",
+        item_number: "ITEM-OTHER",
+        batch_code: "B-2406-A",
+      },
+    });
+    const model = buildCaseViewModel(completeFeed([
+      ...completeEvents.slice(0, 2),
+      mismatchedAnalysis,
+      ...completeEvents.slice(3),
+    ]));
+
+    expect(model.stages.map((stage) => stage.status)).toEqual([
+      "complete",
+      "waiting",
+      "waiting",
+      "waiting",
+      "waiting",
+    ]);
+    expect(model.contractWarnings).toContain(
+      "Analysis completed without an exact match equal to the declared item-and-batch rule.",
+    );
+  });
+
+  it("requires identified revoked and unpublished records for verified completion", () => {
+    const wrongStatuses = fixtureEvent(7, "verification.completed", {
+      passed: true,
+      lease: { lease_id: "TL-042", status: "active" },
+      listing: { listing_id: "LISTING-1001", status: "published" },
+    });
+    const missingLeaseId = fixtureEvent(7, "verification.completed", {
+      passed: true,
+      lease: { status: "revoked" },
+      listing: { listing_id: "LISTING-1001", status: "unpublished" },
+    });
+
+    for (const verification of [wrongStatuses, missingLeaseId]) {
+      const model = buildCaseViewModel(
+        completeFeed([...completeEvents.slice(0, 6), verification]),
+      );
+      expect(model.stages[4]?.status).toBe("waiting");
+      expect(model.contractWarnings).toContain(
+        "Verification completed without a revoked lease and unpublished listing identified in persisted state.",
+      );
+    }
+  });
+
   it("surfaces impossible authority ordering as a contract warning", () => {
     const feed = completeFeed([
       ...completeEvents.slice(0, 3),
