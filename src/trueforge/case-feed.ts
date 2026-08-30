@@ -277,7 +277,7 @@ function findEvidenceTrace(
     call.name === "record_recall_evidence" &&
     call.serverName === "truthlease-local" &&
     !excludedCallIds.has(call.id),
-  );
+  ).reverse();
   for (const recordCall of records) {
     const input = recordEvidenceInput(recordCall.arguments);
     if (
@@ -351,33 +351,36 @@ export function verifyTrueForgeMutationAuthorization(
   excludedCallIds: ReadonlySet<string> = new Set(),
 ): TrueForgeAuthorizationProof | undefined {
   const { ordered, calls } = orderedTrace(entries);
-  const apply = calls.find((call) =>
+  const applyCandidates = calls.filter((call) =>
     call.name === "apply_containment_patch" &&
     call.serverName === "truthlease-local" &&
     !excludedCallIds.has(call.id) &&
     equalJson(call.arguments, input),
-  );
-  if (apply === undefined) return undefined;
-  const approvalRequiredIndex = ordered.findIndex(({ event }, eventIndex) =>
-    eventIndex > apply.eventIndex &&
-    event.type === "tool.approval_required" &&
-    array(event.tool_calls).some((item) => string(record(item)?.id) === apply.id),
-  );
-  const approvalResolutionIndex = ordered.findIndex(({ event }, eventIndex) =>
-    eventIndex > approvalRequiredIndex &&
-    event.type === "turn.created" &&
-    array(event.input).some((item) => {
-      const approval = record(item);
-      return approval?.type === "user.tool_approval" &&
-        approval.tool_call_id === apply.id &&
-        record(approval.approval)?.status === "allow";
-    }),
-  );
-  if (approvalRequiredIndex < 0 || approvalResolutionIndex < 0) return undefined;
-  return {
-    callId: apply.id,
-    authorizedAt: createdAt(ordered[approvalResolutionIndex]!.event),
-  };
+  ).reverse();
+  for (const apply of applyCandidates) {
+    const approvalRequiredIndex = ordered.findIndex(({ event }, eventIndex) =>
+      eventIndex > apply.eventIndex &&
+      event.type === "tool.approval_required" &&
+      array(event.tool_calls).some((item) => string(record(item)?.id) === apply.id),
+    );
+    if (approvalRequiredIndex < 0) continue;
+    const approvalResolutionIndex = ordered.findIndex(({ event }, eventIndex) =>
+      eventIndex > approvalRequiredIndex &&
+      event.type === "turn.created" &&
+      array(event.input).some((item) => {
+        const approval = record(item);
+        return approval?.type === "user.tool_approval" &&
+          approval.tool_call_id === apply.id &&
+          record(approval.approval)?.status === "allow";
+      }),
+    );
+    if (approvalResolutionIndex < 0) continue;
+    return {
+      callId: apply.id,
+      authorizedAt: createdAt(ordered[approvalResolutionIndex]!.event),
+    };
+  }
+  return undefined;
 }
 
 function toolCallsFrom(event: UnknownRecord): ToolCallRecord[] {

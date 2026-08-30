@@ -281,6 +281,45 @@ describe("TrueForge case feed", () => {
     })).toBeUndefined();
   });
 
+  it("prefers the newest complete duplicate evidence call and skips a later incomplete candidate", () => {
+    const entries = qualifyingEntries();
+    const recordCall = (entries[4]!.event.tool_calls as Array<{
+      function: { arguments: string };
+    }>)[0]!;
+    const wire = JSON.parse(recordCall.function.arguments) as Record<string, string>;
+    const evidenceInput: RecordRecallEvidenceInput = {
+      sourceUrl: wire.source_url!,
+      retrievedAt: wire.retrieved_at!,
+      recallNumber: wire.recall_number!,
+      title: wire.title!,
+      productName: wire.product_name!,
+      recallDate: wire.recall_date!,
+      hazard: wire.hazard!,
+      description: wire.description!,
+      itemNumber: wire.item_number!,
+      batchCode: wire.batch_code!,
+      evidenceText: wire.evidence_text!,
+    };
+    entries.push(
+      call(20, "record-retry", "record_recall_evidence", wire, "truthlease-local"),
+      call(21, "record-incomplete", "record_recall_evidence", {
+        ...wire,
+        evidence_text: undefined,
+      }, "truthlease-local"),
+    );
+
+    expect(verifyTrueForgeEvidenceAuthorization(entries, evidenceInput)?.callId).toBe(
+      "record-retry",
+    );
+
+    const withoutCompleteRetry = entries.filter((entry) =>
+      entry.event.id !== "event-20"
+    );
+    expect(verifyTrueForgeEvidenceAuthorization(withoutCompleteRetry, evidenceInput)?.callId).toBe(
+      "record",
+    );
+  });
+
   it("rejects an exec that is not bound to the created sandbox turn", () => {
     const entries = qualifyingEntries();
     entries[12]!.turn_id = "unrelated-turn";
@@ -365,6 +404,53 @@ describe("TrueForge case feed", () => {
 
     await expect(gate.authorizeEvidence(evidenceInput)).rejects.toThrow(
       "outside the permitted freshness window",
+    );
+  });
+
+  it("uses a fresh approved mutation retry when the consumed proof is stale", async () => {
+    const entries = qualifyingEntries();
+    const applyCall = (entries[13]!.event.tool_calls as Array<{
+      function: { arguments: string };
+    }>)[0]!;
+    const mutationInput = JSON.parse(
+      applyCall.function.arguments,
+    ) as ApplyContainmentPatchArguments;
+    let now = new Date(15_500);
+    const fetchImpl: typeof fetch = async () => new Response(
+      JSON.stringify({ data: entries }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+    const gate = new TrueForgeSessionTrustGate(
+      "http://127.0.0.1:8790",
+      sessionId,
+      fetchImpl,
+      () => now,
+      1_000,
+    );
+
+    const originalAuthorization = await gate.authorizeMutation(mutationInput);
+    originalAuthorization.commit();
+    entries.push(
+      call(100, "apply-retry", "apply_containment_patch", { ...mutationInput }, "truthlease-local"),
+      event(101, {
+        type: "tool.approval_required",
+        tool_calls: [{ id: "apply-retry" }],
+      }),
+      event(102, {
+        type: "turn.created",
+        input: [{
+          type: "user.tool_approval",
+          tool_call_id: "apply-retry",
+          approval: { status: "allow" },
+        }],
+      }),
+    );
+    now = new Date(102_500);
+
+    const retryAuthorization = await gate.authorizeMutation(mutationInput);
+    retryAuthorization.commit();
+    expect(verifyTrueForgeMutationAuthorization(entries, mutationInput)?.callId).toBe(
+      "apply-retry",
     );
   });
 });
