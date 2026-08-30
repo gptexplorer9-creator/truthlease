@@ -17,10 +17,6 @@ function resolveCaseId(root: HTMLElement): string | undefined {
   return queryCaseId?.trim() || root.dataset.caseId?.trim() || undefined;
 }
 
-function currentPageHref(): string | undefined {
-  return typeof window === "undefined" ? undefined : window.location.href;
-}
-
 function isOnline(): boolean {
   return typeof navigator === "undefined" ? true : navigator.onLine !== false;
 }
@@ -129,7 +125,6 @@ export function createCaseFileApp({
   caseId = resolveCaseId(root),
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
   queuePollIntervalMs = DEFAULT_QUEUE_POLL_INTERVAL_MS,
-  trueForgeExpectedOrigin,
 }: {
   root: HTMLElement;
   connectionTarget: HTMLElement;
@@ -138,8 +133,6 @@ export function createCaseFileApp({
   caseId?: string;
   pollIntervalMs?: number;
   queuePollIntervalMs?: number;
-  /** Trusted application configuration; case-feed payloads must never set this value. */
-  trueForgeExpectedOrigin?: string;
 }) {
   if (!(root instanceof HTMLElement)) {
     throw new Error("TruthLease requires a valid app root.");
@@ -186,8 +179,6 @@ export function createCaseFileApp({
       nextRetryAt,
       lastAttemptAt,
       lastSuccessAt,
-      pageHref: currentPageHref(),
-      trueForgeExpectedOrigin,
       queueCases,
       queueState,
       queueHasMore,

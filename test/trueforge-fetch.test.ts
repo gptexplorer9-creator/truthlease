@@ -211,4 +211,35 @@ describe("TrueForge loopback event transport", () => {
     )).rejects.toThrow("safe event bound");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ["missing data", {}],
+    ["non-array data", { data: { event: "not-an-array" } }],
+  ])("rejects a page with %s", async (_label, body) => {
+    const fetchImpl = vi.fn<typeof fetch>(async (request) => jsonResponse(
+      200,
+      String(request),
+      body,
+    ));
+
+    await expect(fetchTrueForgeEvents(
+      "http://localhost:8790",
+      "session-p0",
+      fetchImpl,
+    )).rejects.toThrow("data must be an array");
+  });
+
+  it("rejects a malformed event entry instead of dropping it", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (request) => jsonResponse(
+      200,
+      String(request),
+      { data: [{ turn_id: "turn-p0" }] },
+    ));
+
+    await expect(fetchTrueForgeEvents(
+      "http://localhost:8790",
+      "session-p0",
+      fetchImpl,
+    )).rejects.toThrow("malformed event entry");
+  });
 });

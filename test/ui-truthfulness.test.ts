@@ -52,11 +52,9 @@ describe("ui truthfulness gates", () => {
     );
   });
 
-  it("suppresses hosted loopback approval links and renders queue entries from the index", () => {
+  it("suppresses event-supplied approval links and renders queue entries from the index", () => {
     const pending = buildCaseViewModel(completeFeed(completeEvents.slice(0, 4)));
     const html = renderCaseHtml(pending, {
-      pageHref: "https://truthlease.example/case/TL-042",
-      trueForgeExpectedOrigin: "http://127.0.0.1:8790",
       queueState: "ready",
       queueCases: [
         {
@@ -69,7 +67,7 @@ describe("ui truthfulness gates", () => {
     });
 
     expect(html).not.toContain("http://127.0.0.1:8790/session/approval-001");
-    expect(html).toContain("cannot open a local TrueForge approval target");
+    expect(html).toContain("never opens approval URLs supplied by event data");
     expect(html).toContain("recall_containment / HABA Rainbow Rattle");
     expect(html).toContain('aria-current="page"');
     expect(html).toContain("Feed provenance live");

@@ -54,65 +54,6 @@ function safeHttpUrl(value) {
         return undefined;
     }
 }
-function isLoopbackHost(hostname) {
-    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
-}
-function isLocalHttpPage(pageHref) {
-    if (!pageHref || pageHref.trim() === "")
-        return false;
-    try {
-        const page = new URL(pageHref);
-        return page.protocol === "http:" && isLoopbackHost(page.hostname) && !page.username && !page.password;
-    }
-    catch {
-        return false;
-    }
-}
-function trustedTrueForgeOrigin(value) {
-    if (!value || value.trim() === "")
-        return undefined;
-    try {
-        const configured = new URL(value);
-        if (configured.protocol !== "http:" ||
-            !isLoopbackHost(configured.hostname) ||
-            configured.username ||
-            configured.password ||
-            configured.pathname !== "/" ||
-            configured.search ||
-            configured.hash) {
-            return undefined;
-        }
-        return configured.origin;
-    }
-    catch {
-        return undefined;
-    }
-}
-function approvalTarget(value, pageHref, expectedOriginValue) {
-    const href = safeHttpUrl(value);
-    if (!href) {
-        return { href: undefined, blocked: false };
-    }
-    try {
-        const target = new URL(href);
-        if (!isLocalHttpPage(pageHref) && isLoopbackHost(target.hostname)) {
-            return { href: undefined, blocked: true };
-        }
-        const expectedOrigin = trustedTrueForgeOrigin(expectedOriginValue);
-        if (!expectedOrigin ||
-            target.protocol !== "http:" ||
-            !isLoopbackHost(target.hostname) ||
-            target.username ||
-            target.password ||
-            target.origin !== expectedOrigin) {
-            return { href: undefined, blocked: false };
-        }
-    }
-    catch {
-        return { href: undefined, blocked: false };
-    }
-    return { href, blocked: false };
-}
 function formatTimestamp(value, fallback = "Not recorded") {
     if (!value)
         return fallback;
@@ -150,8 +91,6 @@ function normalizeRuntime(model, runtime, fallbackState) {
         nextRetryAt: runtime?.nextRetryAt,
         lastAttemptAt: runtime?.lastAttemptAt,
         lastSuccessAt: runtime?.lastSuccessAt,
-        pageHref: runtime?.pageHref,
-        trueForgeExpectedOrigin: runtime?.trueForgeExpectedOrigin,
         queueCases: runtime?.queueCases ?? [],
         queueState: runtime?.queueState ?? "loading",
         queueHasMore: runtime?.queueHasMore === true,
@@ -373,15 +312,13 @@ function renderArguments(payload) {
         .map(([key, value]) => `<div><dt class="mono">${escapeHtml(key)}</dt><dd><code>${escapeHtml(JSON.stringify(value))}</code></dd></div>`)
         .join("") || `<div><dt>Arguments</dt><dd>Not supplied</dd></div>`}</dl>`;
 }
-function renderApproval(model, runtime) {
+function renderApproval(model) {
     const stage = model.stages[2];
     const request = model.approvalRequest;
     const resolution = model.approvalResolution;
     const requestPayload = request?.payload ?? {};
     const action = firstString(requestPayload, "action", "tool_name", "toolName");
     const approvalId = firstString(requestPayload, "approvalId", "approval_id");
-    const target = objectValue(requestPayload, "trueforgeTarget") ?? objectValue(requestPayload, "trueforge_target");
-    const targetInfo = approvalTarget(firstString(target, "href", "url"), runtime.pageHref, runtime.trueForgeExpectedOrigin);
     const decision = firstString(resolution?.payload, "decision", "status");
     const actor = firstString(resolution?.payload, "actor", "resolved_by", "resolvedBy");
     let stateCopy = `<p class="empty-state">Deterministic proof must complete before TrueForge can request approval.</p>`;
@@ -391,8 +328,8 @@ function renderApproval(model, runtime) {
     else if (request && !resolution) {
         stateCopy = `<div class="approval-airlock">
       <span class="approval-airlock__lock" aria-hidden="true">HOLD</span>
-      <div><p class="eyebrow">Human control point / 0 writes</p><h3>Execution is paused for genuine TrueForge approval</h3><p>No retailer state changes while this case is pending. Review the immutable action and exact arguments below, then choose inside TrueForge's native approval UI.</p><div class="approval-choices" role="group" aria-label="Decisions available in TrueForge"><span>Approve exact patch in TrueForge</span><span>Deny in TrueForge</span></div></div>
-      ${targetInfo.href ? `<a class="button" data-ui-key="approval-target" href="${escapeHtml(targetInfo.href)}" target="_blank" rel="noopener noreferrer">Open genuine TrueForge approval<span class="sr-only"> in a new tab</span></a>` : `<p class="target-missing">${targetInfo.blocked ? "This hosted read-only shell cannot open a local TrueForge approval target. Use the native local session instead." : "No verified TrueForge approval target was supplied. Open the native TrueForge session directly."}</p>`}
+      <div><p class="eyebrow">Human control point / 0 writes</p><h3>Execution is paused in TrueForge</h3><p>No retailer state changes while this case is pending. Review the immutable action and exact arguments below, then choose inside TrueForge's native approval UI.</p><div class="approval-choices" role="group" aria-label="Decisions available in TrueForge"><span>Approve exact patch in TrueForge</span><span>Deny in TrueForge</span></div></div>
+      <p class="target-missing">For safety, this read-only ledger never opens approval URLs supplied by event data. Return to the native TrueForge session directly.</p>
     </div>`;
     }
     else if (resolution && stage.status === "denied") {
@@ -583,7 +520,7 @@ function eventTone(event) {
     }
     return "neutral";
 }
-function redactActivityPayload(event, runtime) {
+function redactActivityPayload(event) {
     if (event.type !== "approval.required")
         return event.payload;
     const targetKey = objectValue(event.payload, "trueforgeTarget")
@@ -597,12 +534,7 @@ function redactActivityPayload(event, runtime) {
     const originalHref = firstString(target, "href", "url");
     if (!originalHref)
         return event.payload;
-    const targetInfo = approvalTarget(originalHref, runtime.pageHref, runtime.trueForgeExpectedOrigin);
-    const replacement = targetInfo.blocked
-        ? "[hosted shell blocked local target]"
-        : targetInfo.href
-            ? targetInfo.href
-            : "[unsafe target suppressed]";
+    const replacement = "[event-supplied approval target suppressed]";
     const sanitizedTarget = { ...target };
     if ("href" in sanitizedTarget || !("url" in sanitizedTarget)) {
         sanitizedTarget.href = replacement;
@@ -628,7 +560,7 @@ function renderRunActivity(model, runtime) {
           </summary>
           <div class="activity-event__detail">
             <p class="event-meta"><span>${escapeHtml(event.type)}</span><span class="mono breakable">${escapeHtml(event.id)}</span><span class="mono breakable">${escapeHtml(event.runId)}</span></p>
-            <pre><code>${escapeHtml(JSON.stringify(redactActivityPayload(event, runtime), null, 2))}</code></pre>
+            <pre><code>${escapeHtml(JSON.stringify(redactActivityPayload(event), null, 2))}</code></pre>
           </div>
         </details>
       </li>`)
@@ -762,7 +694,7 @@ export function renderCaseHtml(model, runtime) {
         runId: model.runId,
         model,
         runtime: normalizedRuntime,
-        mainContent: `${renderPriorState(model, normalizedRuntime)}${renderStageRail(model)}${renderContractWarnings(model)}<div class="case-ledger">${renderEvidence(model)}${renderProof(model)}${renderApproval(model, normalizedRuntime)}${renderPatch(model)}${renderVerification(model)}</div>${renderRunActivity(model, normalizedRuntime)}`,
+        mainContent: `${renderPriorState(model, normalizedRuntime)}${renderStageRail(model)}${renderContractWarnings(model)}<div class="case-ledger">${renderEvidence(model)}${renderProof(model)}${renderApproval(model)}${renderPatch(model)}${renderVerification(model)}</div>${renderRunActivity(model, normalizedRuntime)}`,
     });
 }
 export function renderEmptyWorkspaceHtml(runtime) {

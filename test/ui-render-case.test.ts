@@ -66,21 +66,15 @@ describe("operational case-file renderer", () => {
     expect(html).not.toContain("mutation endpoint");
   });
 
-  it("shows a native approval target only for the trusted expected local origin", () => {
+  it("never opens or exposes an approval target supplied by event data", () => {
     const pending = completeFeed(completeEvents.slice(0, 4));
-    const noTrustedRuntime = renderCaseHtml(buildCaseViewModel(pending));
-    expect(noTrustedRuntime).not.toContain("Open genuine TrueForge approval");
-    expect(noTrustedRuntime).not.toContain("http://127.0.0.1:8790/session/approval-001");
-
-    const realTarget = renderCaseHtml(buildCaseViewModel(pending), {
-      pageHref: "http://127.0.0.1:8788/?case=TL-042",
-      trueForgeExpectedOrigin: "http://127.0.0.1:8790",
-    });
-    expect(realTarget).toContain("Open genuine TrueForge approval");
-    expect(realTarget).toContain("Approve exact patch in TrueForge");
-    expect(realTarget).toContain("Deny in TrueForge");
-    expect(realTarget).toContain("Human control point / 0 writes");
-    expect(realTarget).toContain("http://127.0.0.1:8790/session/approval-001");
+    const html = renderCaseHtml(buildCaseViewModel(pending));
+    expect(html).not.toContain("Open genuine TrueForge approval");
+    expect(html).not.toContain("http://127.0.0.1:8790/session/approval-001");
+    expect(html).toContain("Approve exact patch in TrueForge");
+    expect(html).toContain("Deny in TrueForge");
+    expect(html).toContain("Human control point / 0 writes");
+    expect(html).toContain("never opens approval URLs supplied by event data");
 
     const unsafeRequest = fixtureEvent(4, "approval.required", {
       approvalId: "approval-unsafe",
@@ -94,7 +88,7 @@ describe("operational case-file renderer", () => {
     );
     expect(unsafeTarget).not.toContain("javascript:");
     expect(unsafeTarget).not.toContain("Open genuine TrueForge approval");
-    expect(unsafeTarget).toContain("No verified TrueForge approval target was supplied");
+    expect(unsafeTarget).toContain("Return to the native TrueForge session directly");
   });
 
   it.each([
@@ -111,15 +105,11 @@ describe("operational case-file renderer", () => {
     });
     const html = renderCaseHtml(
       buildCaseViewModel(completeFeed([...completeEvents.slice(0, 3), request])),
-      {
-        pageHref: "http://127.0.0.1:8788/?case=TL-042",
-        trueForgeExpectedOrigin: "http://127.0.0.1:8790",
-      },
     );
 
     expect(html).not.toContain(href);
     expect(html).not.toContain("Open genuine TrueForge approval");
-    expect(html).toContain("Open the native TrueForge session directly");
+    expect(html).toContain("Return to the native TrueForge session directly");
   });
 
   it("escapes hostile source content instead of interpreting it as markup", () => {

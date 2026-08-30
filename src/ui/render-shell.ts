@@ -63,9 +63,6 @@ export interface RenderRuntimeState {
   nextRetryAt?: string;
   lastAttemptAt?: string;
   lastSuccessAt?: string;
-  pageHref?: string;
-  /** Trusted application configuration. Never derive this origin from case-feed events. */
-  trueForgeExpectedOrigin?: string;
   queueCases?: readonly QueueCaseSummary[];
   queueState?: QueueState;
   queueHasMore?: boolean;
@@ -80,8 +77,6 @@ interface NormalizedRuntimeState {
   nextRetryAt?: string;
   lastAttemptAt?: string;
   lastSuccessAt?: string;
-  pageHref?: string;
-  trueForgeExpectedOrigin?: string;
   queueCases: readonly QueueCaseSummary[];
   queueState: QueueState;
   queueHasMore: boolean;
@@ -111,72 +106,6 @@ function safeHttpUrl(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function isLoopbackHost(hostname: string): boolean {
-  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
-}
-
-function isLocalHttpPage(pageHref: string | undefined): boolean {
-  if (!pageHref || pageHref.trim() === "") return false;
-  try {
-    const page = new URL(pageHref);
-    return page.protocol === "http:" && isLoopbackHost(page.hostname) && !page.username && !page.password;
-  } catch {
-    return false;
-  }
-}
-
-function trustedTrueForgeOrigin(value: string | undefined): string | undefined {
-  if (!value || value.trim() === "") return undefined;
-  try {
-    const configured = new URL(value);
-    if (
-      configured.protocol !== "http:" ||
-      !isLoopbackHost(configured.hostname) ||
-      configured.username ||
-      configured.password ||
-      configured.pathname !== "/" ||
-      configured.search ||
-      configured.hash
-    ) {
-      return undefined;
-    }
-    return configured.origin;
-  } catch {
-    return undefined;
-  }
-}
-
-function approvalTarget(
-  value: unknown,
-  pageHref: string | undefined,
-  expectedOriginValue: string | undefined,
-): { href?: string; blocked: boolean } {
-  const href = safeHttpUrl(value);
-  if (!href) {
-    return { href: undefined, blocked: false };
-  }
-  try {
-    const target = new URL(href);
-    if (!isLocalHttpPage(pageHref) && isLoopbackHost(target.hostname)) {
-      return { href: undefined, blocked: true };
-    }
-    const expectedOrigin = trustedTrueForgeOrigin(expectedOriginValue);
-    if (
-      !expectedOrigin ||
-      target.protocol !== "http:" ||
-      !isLoopbackHost(target.hostname) ||
-      target.username ||
-      target.password ||
-      target.origin !== expectedOrigin
-    ) {
-      return { href: undefined, blocked: false };
-    }
-  } catch {
-    return { href: undefined, blocked: false };
-  }
-  return { href, blocked: false };
 }
 
 function formatTimestamp(value: string | undefined, fallback = "Not recorded"): string {
@@ -222,8 +151,6 @@ function normalizeRuntime(
     nextRetryAt: runtime?.nextRetryAt,
     lastAttemptAt: runtime?.lastAttemptAt,
     lastSuccessAt: runtime?.lastSuccessAt,
-    pageHref: runtime?.pageHref,
-    trueForgeExpectedOrigin: runtime?.trueForgeExpectedOrigin,
     queueCases: runtime?.queueCases ?? [],
     queueState: runtime?.queueState ?? "loading",
     queueHasMore: runtime?.queueHasMore === true,
@@ -461,19 +388,13 @@ function renderArguments(payload: JsonObject): string {
     .join("") || `<div><dt>Arguments</dt><dd>Not supplied</dd></div>`}</dl>`;
 }
 
-function renderApproval(model: CaseViewModel, runtime: NormalizedRuntimeState): string {
+function renderApproval(model: CaseViewModel): string {
   const stage = model.stages[2]!;
   const request = model.approvalRequest;
   const resolution = model.approvalResolution;
   const requestPayload = request?.payload ?? {};
   const action = firstString(requestPayload, "action", "tool_name", "toolName");
   const approvalId = firstString(requestPayload, "approvalId", "approval_id");
-  const target = objectValue(requestPayload, "trueforgeTarget") ?? objectValue(requestPayload, "trueforge_target");
-  const targetInfo = approvalTarget(
-    firstString(target, "href", "url"),
-    runtime.pageHref,
-    runtime.trueForgeExpectedOrigin,
-  );
   const decision = firstString(resolution?.payload, "decision", "status");
   const actor = firstString(resolution?.payload, "actor", "resolved_by", "resolvedBy");
 
@@ -483,8 +404,8 @@ function renderApproval(model: CaseViewModel, runtime: NormalizedRuntimeState): 
   } else if (request && !resolution) {
     stateCopy = `<div class="approval-airlock">
       <span class="approval-airlock__lock" aria-hidden="true">HOLD</span>
-      <div><p class="eyebrow">Human control point / 0 writes</p><h3>Execution is paused for genuine TrueForge approval</h3><p>No retailer state changes while this case is pending. Review the immutable action and exact arguments below, then choose inside TrueForge's native approval UI.</p><div class="approval-choices" role="group" aria-label="Decisions available in TrueForge"><span>Approve exact patch in TrueForge</span><span>Deny in TrueForge</span></div></div>
-      ${targetInfo.href ? `<a class="button" data-ui-key="approval-target" href="${escapeHtml(targetInfo.href)}" target="_blank" rel="noopener noreferrer">Open genuine TrueForge approval<span class="sr-only"> in a new tab</span></a>` : `<p class="target-missing">${targetInfo.blocked ? "This hosted read-only shell cannot open a local TrueForge approval target. Use the native local session instead." : "No verified TrueForge approval target was supplied. Open the native TrueForge session directly."}</p>`}
+      <div><p class="eyebrow">Human control point / 0 writes</p><h3>Execution is paused in TrueForge</h3><p>No retailer state changes while this case is pending. Review the immutable action and exact arguments below, then choose inside TrueForge's native approval UI.</p><div class="approval-choices" role="group" aria-label="Decisions available in TrueForge"><span>Approve exact patch in TrueForge</span><span>Deny in TrueForge</span></div></div>
+      <p class="target-missing">For safety, this read-only ledger never opens approval URLs supplied by event data. Return to the native TrueForge session directly.</p>
     </div>`;
   } else if (resolution && stage.status === "denied") {
     stateCopy = `<div class="notice notice--warning" role="status"><strong>Denied in TrueForge</strong><p>Decision: ${display(decision)}${actor ? ` by ${display(actor)}` : ""}. No patch is authorized.</p></div>`;
@@ -685,7 +606,7 @@ function eventTone(event: RunEvent): string {
   return "neutral";
 }
 
-function redactActivityPayload(event: RunEvent, runtime: NormalizedRuntimeState): JsonValue {
+function redactActivityPayload(event: RunEvent): JsonValue {
   if (event.type !== "approval.required") return event.payload;
   const targetKey = objectValue(event.payload, "trueforgeTarget")
     ? "trueforgeTarget"
@@ -698,12 +619,7 @@ function redactActivityPayload(event: RunEvent, runtime: NormalizedRuntimeState)
   const originalHref = firstString(target, "href", "url");
   if (!originalHref) return event.payload;
 
-  const targetInfo = approvalTarget(originalHref, runtime.pageHref, runtime.trueForgeExpectedOrigin);
-  const replacement = targetInfo.blocked
-    ? "[hosted shell blocked local target]"
-    : targetInfo.href
-      ? targetInfo.href
-      : "[unsafe target suppressed]";
+  const replacement = "[event-supplied approval target suppressed]";
 
   const sanitizedTarget: JsonObject = { ...target };
   if ("href" in sanitizedTarget || !("url" in sanitizedTarget)) {
@@ -733,7 +649,7 @@ function renderRunActivity(model: CaseViewModel, runtime: NormalizedRuntimeState
           </summary>
           <div class="activity-event__detail">
             <p class="event-meta"><span>${escapeHtml(event.type)}</span><span class="mono breakable">${escapeHtml(event.id)}</span><span class="mono breakable">${escapeHtml(event.runId)}</span></p>
-            <pre><code>${escapeHtml(JSON.stringify(redactActivityPayload(event, runtime), null, 2))}</code></pre>
+            <pre><code>${escapeHtml(JSON.stringify(redactActivityPayload(event), null, 2))}</code></pre>
           </div>
         </details>
       </li>`,
@@ -883,7 +799,7 @@ export function renderCaseHtml(model: CaseViewModel, runtime?: RenderRuntimeStat
     runId: model.runId,
     model,
     runtime: normalizedRuntime,
-    mainContent: `${renderPriorState(model, normalizedRuntime)}${renderStageRail(model)}${renderContractWarnings(model)}<div class="case-ledger">${renderEvidence(model)}${renderProof(model)}${renderApproval(model, normalizedRuntime)}${renderPatch(model)}${renderVerification(model)}</div>${renderRunActivity(model, normalizedRuntime)}`,
+    mainContent: `${renderPriorState(model, normalizedRuntime)}${renderStageRail(model)}${renderContractWarnings(model)}<div class="case-ledger">${renderEvidence(model)}${renderProof(model)}${renderApproval(model)}${renderPatch(model)}${renderVerification(model)}</div>${renderRunActivity(model, normalizedRuntime)}`,
   });
 }
 

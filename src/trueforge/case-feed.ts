@@ -555,16 +555,22 @@ export async function fetchTrueForgeEvents(
 
     const body = record(await response.json());
     if (body === undefined) throw new Error("TrueForge event response must be a JSON object.");
-    const rawPageEntries = array(body.data);
+    if (!Array.isArray(body.data)) {
+      throw new Error("TrueForge event response data must be an array.");
+    }
+    const rawPageEntries = body.data;
     receivedEventCount += rawPageEntries.length;
     if (receivedEventCount > TRUEFORGE_EVENT_MAX_EVENTS) {
       throw new Error("TrueForge event feed exceeded the safe event bound.");
     }
-    const pageEntries = rawPageEntries.flatMap((item) => {
+    const pageEntries = rawPageEntries.map((item) => {
       const entry = record(item);
       const event = record(entry?.event);
       const turnId = string(entry?.turn_id);
-      return event !== undefined && turnId !== undefined ? [{ turn_id: turnId, event }] : [];
+      if (event === undefined || turnId === undefined) {
+        throw new Error("TrueForge event response contains a malformed event entry.");
+      }
+      return { turn_id: turnId, event };
     });
     entries.push(...pageEntries);
 
