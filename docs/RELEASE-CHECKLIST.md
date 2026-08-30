@@ -1,12 +1,12 @@
 # TruthLease demo-release checklist
 
-Candidate source: `5a08272` on `feat/p0-vertical-slice`. Use this hash only for the checks recorded below; replace it with the exact promoted commit if the candidate advances.
+Candidate source: `49769bf04146c8b402076ef56e2c34d7d1a1a93a` on `feat/p0-vertical-slice`. Use this hash only for the checks recorded below; replace it with the exact promoted commit if the candidate advances.
 
 This checklist separates repository verification from external evidence. A checked repository item does not upgrade a pending live, review, media, release, or submission claim.
 
 ## 1. Repository candidate
 
-- [x] `npm run check` passes for candidate `5a08272`: 22 test files, 107 tests (2026-08-29).
+- [x] `npm run check` passes for candidate `49769bf04146c8b402076ef56e2c34d7d1a1a93a`: 22 test files, 122/122 tests (2026-08-29).
 - [x] Documentation checks pass: local Markdown links resolve, the Mermaid sequence is present, and no invalid control bytes are present (2026-08-29).
 - [x] Final diff contains documentation only; no product source, UI, backend, configuration, test, fixture, credential, or runtime-state changes.
 - [x] Release-notes draft exists at [`RELEASE-NOTES-v0.1.0-rc1.md`](RELEASE-NOTES-v0.1.0-rc1.md).
@@ -26,7 +26,7 @@ Genuine-run status: **pending current recorded run**. Fixtures and controlled te
 
 ## 3. Live surface and media
 
-- [ ] **Candidate deployment:** [truthlease.vercel.app](https://truthlease.vercel.app) exists, but the current deployment predates `5a08272`. Deploy only with owner authorization, then record the exact commit, timestamp, and read-only hosted-boundary check.
+- [ ] **Candidate deployment:** [truthlease.vercel.app](https://truthlease.vercel.app) exists, but deployment of `49769bf04146c8b402076ef56e2c34d7d1a1a93a` has not been verified. Deploy only with owner authorization, then record the exact commit, timestamp, and read-only hosted-boundary check.
 - [x] **Current hosted data boundary:** the deployed case ledger is empty until a genuine run is ingested; hosted `/mcp` is disabled. An empty shell is not demo evidence.
 - [ ] **Screenshot set:** capture the prior lease, canonical evidence, deterministic proof, native approval pause, patch receipt, and persisted-state re-read from one traceable run.
 - [ ] **GIF:** optional; if used, preserve evidence labels and do not skip the genuine approval pause.
@@ -37,8 +37,8 @@ Screenshot/GIF/video status: **pending capture**.
 
 ## 4. Release notes and owner gate
 
-- [x] Release-notes draft describes only behavior supported by candidate `5a08272`.
-- [x] Record current validation results without upgrading pending external evidence: complete check passed with 22 test files and 107 tests.
+- [x] Release-notes draft describes only behavior supported by candidate `49769bf04146c8b402076ef56e2c34d7d1a1a93a`.
+- [x] Record current validation results without upgrading pending external evidence: complete check passed with 22 test files and 122/122 tests.
 - [ ] Add the final candidate commit and external evidence links only after they exist.
 - [ ] Owner reviews the exact repository, live URL, genuine-run receipt, Qodo evidence, media, and release notes as one candidate set.
 - [ ] Owner explicitly authorizes any push, deployment, GitHub release, or hackathon/Google submission.

@@ -28,7 +28,7 @@ Bright Data is the qualifying web transport; CPSC is the source authority. TrueF
 
 ## What the current candidate supports
 
-Candidate `5a08272` passes the complete repository check: 22 test files and 107 tests. That result verifies controlled code behavior. It does not prove that an external service ran or that the deployed site contains a genuine case.
+Candidate `49769bf04146c8b402076ef56e2c34d7d1a1a93a` passes the complete repository check: 22 test files and 122/122 tests. That result verifies controlled code behavior. It does not prove that an external service ran or that the deployed site contains a genuine case.
 
 | Surface | Repository-supported status | External evidence status |
 | --- | --- | --- |
@@ -38,7 +38,7 @@ Candidate `5a08272` passes the complete repository check: 22 test files and 107 
 | Native approval | Manifest requires approval for `apply_containment_patch` | Current genuine TrueForge approval event pending |
 | Local MCP containment | Evidence-bound, version-checked, atomic, idempotent mutation is implemented and integration-tested | Current genuine mutation receipt pending |
 | Post-action verification | `verify_containment_state` performs a new owned-state read and checks exact and near-match outcomes | Current persisted-state re-read receipt pending |
-| Hosted case ledger | Read-only case surfaces, append-only ingestion, and outbound connector are implemented and tested | [truthlease.vercel.app](https://truthlease.vercel.app) exists, but its deployment predates this candidate and its ledger is empty until a genuine run is ingested |
+| Hosted case ledger | Read-only case surfaces, append-only ingestion, and outbound connector are implemented and tested | [truthlease.vercel.app](https://truthlease.vercel.app) exists, but deployment of this exact candidate is unverified and its ledger is empty until a genuine run is ingested |
 | Qodo | Review-driven fixes are present in the candidate | Final review evidence must be attached to the exact promoted commit |
 | Demo media | Journey and evidence map are documented | Screenshot/GIF/video pending |
 | Release/submission | Draft release notes and owner checklist exist | Owner-gated; not published or submitted |
@@ -88,7 +88,7 @@ The current candidate implements a same-origin application for a case index, app
 
 The outbound operator connector is designed to read one genuine TrueForge session through its loopback API and append authenticated event batches to `POST /api/connectors/:connectorId/events`. It cannot approve or mutate. Transport uses a bearer credential, while provenance attestation requires a separate HMAC secret; neither can substitute for the other. TrueForge remains the native approval authority; the local TruthLease MCP remains the mutation authority. See [`docs/CONNECTOR.md`](docs/CONNECTOR.md).
 
-The hosted shell currently exists at [truthlease.vercel.app](https://truthlease.vercel.app), but that deployment predates candidate `5a08272`. Its empty case index means no genuine run has been ingested. Do not synthesize a demo case, cite the shell as workflow evidence, or describe it as the candidate deployment until the exact commit is deployed and verified with owner authorization.
+The hosted shell currently exists at [truthlease.vercel.app](https://truthlease.vercel.app), but it has not been verified as a deployment of candidate `49769bf04146c8b402076ef56e2c34d7d1a1a93a`. Its empty case index means no genuine run has been ingested. Do not synthesize a demo case, cite the shell as workflow evidence, or describe it as the candidate deployment until the exact commit is deployed and verified with owner authorization.
 
 ## Safety properties
 
