@@ -23,6 +23,21 @@ describe("operational case-file renderer", () => {
     expect(html).not.toContain("case feed is unavailable");
   });
 
+  it("renders explicit read-only continuation when more case records exist", () => {
+    const html = renderEmptyWorkspaceHtml({
+      terminalState: "connected",
+      queueState: "ready",
+      queueCases: [{ caseId: "TL-001" }],
+      queueHasMore: true,
+    });
+
+    expect(html).toContain("Load more cases");
+    expect(html).toContain("More recorded cases are available");
+    expect(html).toContain("30-second refresh reads only the newest bounded page");
+    expect(html).not.toContain("apply_containment_patch");
+    expect(html).not.toContain("mutation endpoint");
+  });
+
   it("renders the complete evidence-to-verification record without browser action controls", () => {
     const html = renderCaseHtml(buildCaseViewModel(completeFeed()));
 
@@ -118,11 +133,11 @@ describe("operational case-file renderer", () => {
     expect(replayHtml).toContain("No second mutation was applied");
   });
 
-  it("withholds the verified banner when persisted statuses do not prove containment", () => {
+  it("withholds the verified banner for a different lease and listing", () => {
     const invalidVerification = fixtureEvent(7, "verification.completed", {
       passed: true,
-      lease: { lease_id: "TL-042", status: "active" },
-      listing: { listing_id: "LISTING-1001", status: "published" },
+      lease: { lease_id: "TL-OTHER", status: "revoked" },
+      listing: { listing_id: "LISTING-OTHER", status: "unpublished" },
     });
     const html = renderCaseHtml(
       buildCaseViewModel(completeFeed([...completeEvents.slice(0, 6), invalidVerification])),

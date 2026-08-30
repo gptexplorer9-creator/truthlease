@@ -124,6 +124,9 @@ function normalizeRuntime(model, runtime, fallbackState) {
         pageHref: runtime?.pageHref,
         queueCases: runtime?.queueCases ?? [],
         queueState: runtime?.queueState ?? "loading",
+        queueHasMore: runtime?.queueHasMore === true,
+        queueLoadingMore: runtime?.queueLoadingMore === true,
+        queueContinuationError: runtime?.queueContinuationError,
     };
     normalized.connectionMessage =
         normalized.connectionMessage.trim() !== "" ? normalized.connectionMessage : defaultConnectionMessage(normalized);
@@ -621,7 +624,7 @@ function renderCaseTable(runtime) {
             ? "Case index unavailable"
             : count === 1
                 ? "1 loaded case"
-                : `${count} loaded cases`;
+                : `${count} loaded cases${runtime.queueHasMore ? "; more available" : ""}`;
     const rows = runtime.queueCases
         .map((entry) => {
         const searchValue = [entry.caseId, entry.caseType, entry.subject].filter(Boolean).join(" ");
@@ -641,6 +644,13 @@ function renderCaseTable(runtime) {
             : count === 0
                 ? `<tr><td colspan="5"><div class="table-empty"><strong>No case records yet</strong><span>An authenticated connector must record the first durable case and run.</span></div></td></tr>`
                 : "";
+    const continuation = runtime.queueContinuationError
+        ? `<div class="notice notice--warning" role="alert"><strong>More cases were not loaded</strong><p>${escapeHtml(runtime.queueContinuationError)} Existing records remain visible; refresh the index or try again.</p></div>`
+        : runtime.queueHasMore
+            ? `<div class="resource-pagination"><p>More recorded cases are available.</p><button class="refresh-button" type="button" data-case-load-more data-ui-key="case-load-more"${runtime.queueLoadingMore ? " disabled" : ""}>${runtime.queueLoadingMore ? "Loading more..." : "Load more cases"}</button></div>`
+            : runtime.queueState === "ready" && count > 0
+                ? `<p class="resource-panel__note">All available case records in this continuation scan are loaded.</p>`
+                : "";
     return `<section class="resource-panel" id="case-records" aria-labelledby="case-records-title">
     <div class="resource-toolbar">
       <div class="resource-toolbar__heading"><h2 id="case-records-title">Recorded cases</h2><span class="result-count" data-case-result-count aria-live="polite">${escapeHtml(countLabel)}</span></div>
@@ -656,7 +666,8 @@ function renderCaseTable(runtime) {
         <tbody>${rows}${emptyRow}<tr data-case-no-matches hidden><td colspan="5"><div class="table-empty"><strong>No loaded cases match these filters</strong><span>Clear the search or change the case type.</span></div></td></tr></tbody>
       </table>
     </div>
-    <p class="resource-panel__note">Search and filters apply to the loaded index only. Selecting a row opens its append-only operational record.</p>
+    ${continuation}
+    <p class="resource-panel__note">The 30-second refresh reads only the newest bounded page. Search and filters apply to loaded records; use Load more cases to continue discovery without giving this browser mutation authority.</p>
   </section>`;
 }
 function renderPrimaryNavigation(model, runtime) {

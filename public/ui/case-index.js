@@ -78,50 +78,85 @@ export class HttpCaseIndexSource {
         this.#basePath = options.basePath ?? "/api/cases";
         this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     }
-    async loadCases(signal) {
-        const cases = [];
-        const caseIds = new Set();
-        const cursors = new Set();
-        let cursor;
-        while (true) {
-            const separator = this.#basePath.includes("?") ? "&" : "?";
-            const url = cursor === undefined
-                ? this.#basePath
-                : `${this.#basePath}${separator}cursor=${encodeURIComponent(cursor)}`;
-            const response = await this.#fetch(url, {
-                method: "GET",
-                headers: { accept: "application/json" },
-                signal,
-            });
-            if (!response.ok) {
-                let detail;
-                try {
-                    const body = (await response.json());
-                    if (isRecord(body) && typeof body.error === "string" && body.error.trim() !== "") {
-                        detail = body.error;
-                    }
+    async loadPage(cursor, signal) {
+        const separator = this.#basePath.includes("?") ? "&" : "?";
+        const url = cursor === undefined
+            ? this.#basePath
+            : `${this.#basePath}${separator}cursor=${encodeURIComponent(cursor)}`;
+        const response = await this.#fetch(url, {
+            method: "GET",
+            headers: { accept: "application/json" },
+            signal,
+        });
+        if (!response.ok) {
+            let detail;
+            try {
+                const body = (await response.json());
+                if (isRecord(body) && typeof body.error === "string" && body.error.trim() !== "") {
+                    detail = body.error;
                 }
-                catch {
-                    // Non-JSON error responses still retain their authoritative HTTP status.
-                }
-                throw new Error(detail === undefined
-                    ? `Case index failed with HTTP ${response.status}.`
-                    : `Case index failed with HTTP ${response.status}: ${detail}`);
             }
-            const page = parseCaseIndexFeed(await response.json());
-            for (const entry of page.cases) {
-                if (caseIds.has(entry.caseId))
-                    continue;
-                caseIds.add(entry.caseId);
-                cases.push(entry);
+            catch {
+                // Non-JSON error responses still retain their authoritative HTTP status.
             }
-            if (page.nextCursor === undefined)
-                return { cases };
-            if (cursors.has(page.nextCursor)) {
-                throw new Error("Case index pagination returned a cursor cycle.");
-            }
-            cursors.add(page.nextCursor);
-            cursor = page.nextCursor;
+            throw new Error(detail === undefined
+                ? `Case index failed with HTTP ${response.status}.`
+                : `Case index failed with HTTP ${response.status}: ${detail}`);
         }
+        return parseCaseIndexFeed(await response.json());
     }
+}
+export class CaseIndexPager {
+    #source;
+    #cases = [];
+    #nextCursor;
+    #requestedCursors = new Set();
+    #hasAdvanced = false;
+    constructor(source) {
+        this.#source = source;
+    }
+    get snapshot() {
+        return {
+            cases: this.#cases.map((entry) => ({ ...entry })),
+            ...(this.#nextCursor === undefined ? {} : { nextCursor: this.#nextCursor }),
+        };
+    }
+    async refreshFirstPage(options = {}, signal) {
+        const page = await this.#source.loadPage(undefined, signal);
+        this.#cases = deduplicateCases([...page.cases, ...this.#cases]);
+        if (options.resetContinuation === true || !this.#hasAdvanced) {
+            this.#nextCursor = page.nextCursor;
+            this.#requestedCursors.clear();
+            this.#hasAdvanced = false;
+        }
+        return this.snapshot;
+    }
+    async loadNextPage(signal) {
+        const cursor = this.#nextCursor;
+        if (cursor === undefined)
+            return this.snapshot;
+        if (this.#requestedCursors.has(cursor)) {
+            throw new Error("Case index pagination returned a cursor cycle.");
+        }
+        const page = await this.#source.loadPage(cursor, signal);
+        this.#requestedCursors.add(cursor);
+        if (page.nextCursor !== undefined && this.#requestedCursors.has(page.nextCursor)) {
+            throw new Error("Case index pagination returned a cursor cycle.");
+        }
+        this.#cases = deduplicateCases([...this.#cases, ...page.cases]);
+        this.#nextCursor = page.nextCursor;
+        this.#hasAdvanced = true;
+        return this.snapshot;
+    }
+}
+function deduplicateCases(entries) {
+    const caseIds = new Set();
+    const cases = [];
+    for (const entry of entries) {
+        if (caseIds.has(entry.caseId))
+            continue;
+        caseIds.add(entry.caseId);
+        cases.push({ ...entry });
+    }
+    return cases;
 }

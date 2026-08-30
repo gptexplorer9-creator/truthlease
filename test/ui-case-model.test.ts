@@ -79,14 +79,19 @@ describe("deterministic case state", () => {
       lease: { status: "revoked" },
       listing: { listing_id: "LISTING-1001", status: "unpublished" },
     });
+    const crossEntityRead = fixtureEvent(7, "verification.completed", {
+      passed: true,
+      lease: { lease_id: "TL-OTHER", status: "revoked" },
+      listing: { listing_id: "LISTING-OTHER", status: "unpublished" },
+    });
 
-    for (const verification of [wrongStatuses, missingLeaseId]) {
+    for (const verification of [wrongStatuses, missingLeaseId, crossEntityRead]) {
       const model = buildCaseViewModel(
         completeFeed([...completeEvents.slice(0, 6), verification]),
       );
       expect(model.stages[4]?.status).toBe("waiting");
       expect(model.contractWarnings).toContain(
-        "Verification completed without a revoked lease and unpublished listing identified in persisted state.",
+        "Verification completed without matching the patch receipt's revoked lease and unpublished listing.",
       );
     }
   });

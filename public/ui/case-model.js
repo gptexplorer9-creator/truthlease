@@ -61,14 +61,20 @@ function patchHasContract(event) {
         hasIdentityStatus(objectValue(event.payload, "lease"), ["lease_id", "leaseId", "id"]) &&
         hasIdentityStatus(objectValue(event.payload, "listing"), ["listing_id", "listingId", "id"]));
 }
-function verificationHasContract(event) {
-    if (!event)
+function verificationHasContract(event, patch) {
+    if (!event || !patch)
         return false;
     const lease = objectValue(event.payload, "lease");
     const listing = objectValue(event.payload, "listing");
-    return (firstString(lease, "lease_id", "leaseId", "id") !== undefined &&
+    const patchedLease = objectValue(patch.payload, "lease");
+    const patchedListing = objectValue(patch.payload, "listing");
+    const leaseId = firstString(lease, "lease_id", "leaseId", "id");
+    const listingId = firstString(listing, "listing_id", "listingId", "id");
+    return (leaseId !== undefined &&
+        leaseId === firstString(patchedLease, "lease_id", "leaseId", "id") &&
         firstString(lease, "status")?.toLowerCase() === "revoked" &&
-        firstString(listing, "listing_id", "listingId", "id") !== undefined &&
+        listingId !== undefined &&
+        listingId === firstString(patchedListing, "listing_id", "listingId", "id") &&
         firstString(listing, "status", "publication_status", "publicationStatus")?.toLowerCase() === "unpublished");
 }
 export function checkEvidenceContract(event) {
@@ -223,7 +229,7 @@ export function buildCaseViewModel(input) {
         trustedPatchReceipt &&
         verificationAfterPatch &&
         verificationPassed &&
-        verificationHasContract(verification);
+        verificationHasContract(verification, patch);
     const trustedVerificationFailure = finalVerificationEvent?.type === "verification.failed" &&
         trustedPatchReceipt &&
         verificationFailureAfterPatch;
@@ -243,9 +249,9 @@ export function buildCaseViewModel(input) {
         addWarning(warnings, "Verification did not occur after the applied patch receipt.");
         setStageNote(stageNotes, "verified", "The verification event is out of order relative to the applied patch receipt, so the UI will not render a verified completion.");
     }
-    else if (verification && verificationPassed && !verificationHasContract(verification)) {
-        addWarning(warnings, "Verification completed without a revoked lease and unpublished listing identified in persisted state.");
-        setStageNote(stageNotes, "verified", "The verification event reports success but does not prove an identified revoked lease and identified unpublished listing.");
+    else if (verification && verificationPassed && !verificationHasContract(verification, patch)) {
+        addWarning(warnings, "Verification completed without matching the patch receipt's revoked lease and unpublished listing.");
+        setStageNote(stageNotes, "verified", "The verification event reports success but does not prove the same revoked lease and unpublished listing identified by the trusted patch receipt.");
     }
     if (verificationFailure && patch && !trustedPatchReceipt) {
         addWarning(warnings, "Verification failure arrived before a trustworthy applied patch receipt.");

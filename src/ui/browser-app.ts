@@ -2,8 +2,8 @@
 
 import type { CaseEventFeed, CaseEventSource, RunEvent } from "./case-events.js";
 import { HttpCaseEventSource, mergeCaseEvents } from "./case-events.js";
-import type { CaseIndexEntry } from "./case-index.js";
-import { HttpCaseIndexSource } from "./case-index.js";
+import type { CaseIndexEntry, CaseIndexSource } from "./case-index.js";
+import { CaseIndexPager, HttpCaseIndexSource } from "./case-index.js";
 import { buildCaseViewModel } from "./case-model.js";
 import { renderCaseHtml, renderEmptyWorkspaceHtml, renderFeedErrorHtml, renderLoadingHtml } from "./render-shell.js";
 import type { FeedProvenance, TerminalState } from "./runtime-state.js";
@@ -133,7 +133,7 @@ export function createCaseFileApp({
   root: HTMLElement;
   connectionTarget: HTMLElement;
   source?: CaseEventSource;
-  queueSource?: HttpCaseIndexSource;
+  queueSource?: CaseIndexSource;
   caseId?: string;
   pollIntervalMs?: number;
   queuePollIntervalMs?: number;
@@ -144,6 +144,7 @@ export function createCaseFileApp({
   if (!(connectionTarget instanceof HTMLElement)) {
     throw new Error("TruthLease requires a valid connection status target.");
   }
+  const queuePager = new CaseIndexPager(queueSource);
 
   let activeCaseId = caseId;
   let runId: string | undefined;
@@ -162,6 +163,9 @@ export function createCaseFileApp({
   let currentDelayMs = pollIntervalMs;
   let queueState: "loading" | "ready" | "unavailable" = "loading";
   let queueCases: CaseIndexEntry[] = [];
+  let queueHasMore = false;
+  let queueLoadingMore = false;
+  let queueContinuationError: string | undefined;
   let lastAttemptAt: string | undefined;
   let lastSuccessAt: string | undefined;
   let nextRetryAt: string | undefined;
@@ -182,12 +186,15 @@ export function createCaseFileApp({
       pageHref: currentPageHref(),
       queueCases,
       queueState,
+      queueHasMore,
+      queueLoadingMore,
+      queueContinuationError,
     };
 
     if (currentModel) {
       emptyWorkspaceRendered = false;
       renderIntoRoot(root, renderCaseHtml(currentModel, runtime));
-    } else if (!activeCaseId && queueState === "ready") {
+    } else if (!activeCaseId && (queueState === "ready" || queueCases.length > 0)) {
       if (!emptyWorkspaceRendered) renderIntoRoot(root, renderEmptyWorkspaceHtml(runtime));
       emptyWorkspaceRendered = true;
     } else if (state === "loading") {
@@ -201,7 +208,21 @@ export function createCaseFileApp({
     setConnectionState(connectionTarget, state, runtime.connectionMessage);
   }
 
-  async function refreshQueue(): Promise<void> {
+  function applyQueueFeed(feed: { cases: CaseIndexEntry[]; nextCursor?: string }): boolean {
+    const nextCases = parseQueueEntries(feed);
+    const changed =
+      queueHasMore !== (feed.nextCursor !== undefined) ||
+      JSON.stringify(queueCases) !== JSON.stringify(nextCases);
+    queueCases = nextCases;
+    queueHasMore = feed.nextCursor !== undefined;
+    return changed;
+  }
+
+  function scheduleQueueRefresh(delayMs: number): void {
+    queueTimer = window.setTimeout(() => void refreshQueue(false), delayMs);
+  }
+
+  async function refreshQueue(resetContinuation = false): Promise<void> {
     if (stopped) return;
     if (queueTimer !== undefined) {
       window.clearTimeout(queueTimer);
@@ -212,12 +233,15 @@ export function createCaseFileApp({
     const queueSignal = queueController.signal;
     const queueDelayMs = Math.max(queuePollIntervalMs, 10_000);
     try {
-      const feed = await queueSource.loadCases(queueSignal);
+      const feed = await queuePager.refreshFirstPage({ resetContinuation }, queueSignal);
       if (queueSignal.aborted || stopped) return;
-      queueCases = parseQueueEntries(feed);
+      const changed = applyQueueFeed(feed);
       queueState = "ready";
+      queueLoadingMore = false;
+      queueContinuationError = undefined;
       lastAttemptAt = new Date().toISOString();
       lastSuccessAt = lastAttemptAt;
+      if (changed || resetContinuation) emptyWorkspaceRendered = false;
 
       if (!activeCaseId) {
         nextRetryAt = new Date(Date.now() + queueDelayMs).toISOString();
@@ -228,27 +252,64 @@ export function createCaseFileApp({
             : `Append-only ledger connected. ${queueCases.length} recorded cases loaded.`,
           queueDelayMs,
         );
-        queueTimer = window.setTimeout(refreshQueue, queueDelayMs);
+        scheduleQueueRefresh(queueDelayMs);
         return;
       }
 
       renderCurrent(currentTerminalState, currentTerminalDetail, currentDelayMs);
-      queueTimer = window.setTimeout(refreshQueue, queueDelayMs);
+      scheduleQueueRefresh(queueDelayMs);
     } catch (error) {
       if (queueSignal.aborted || stopped) return;
-      queueCases = [];
       queueState = "unavailable";
+      queueLoadingMore = false;
       const detail = error instanceof Error ? error.message : "Unknown case index error.";
+      emptyWorkspaceRendered = false;
       if (!activeCaseId) {
         nextRetryAt = new Date(Date.now() + queueDelayMs).toISOString();
         renderCurrent(classifyTerminalState(detail, { online: isOnline() }), detail, queueDelayMs);
-        queueTimer = window.setTimeout(refreshQueue, queueDelayMs);
+        scheduleQueueRefresh(queueDelayMs);
       } else {
         renderCurrent(currentTerminalState, currentTerminalDetail, currentDelayMs);
-        queueTimer = window.setTimeout(refreshQueue, queueDelayMs);
+        scheduleQueueRefresh(queueDelayMs);
       }
     } finally {
       queueController = undefined;
+    }
+  }
+
+  async function loadMoreQueue(): Promise<void> {
+    if (stopped || queueLoadingMore || !queueHasMore) return;
+    if (queueTimer !== undefined) {
+      window.clearTimeout(queueTimer);
+      queueTimer = undefined;
+    }
+    queueController?.abort();
+    queueController = new AbortController();
+    const queueSignal = queueController.signal;
+    const queueDelayMs = Math.max(queuePollIntervalMs, 10_000);
+    queueLoadingMore = true;
+    queueContinuationError = undefined;
+    emptyWorkspaceRendered = false;
+    renderCurrent(currentTerminalState, currentTerminalDetail, currentDelayMs);
+    try {
+      const feed = await queuePager.loadNextPage(queueSignal);
+      if (queueSignal.aborted || stopped) return;
+      applyQueueFeed(feed);
+      queueState = "ready";
+      queueLoadingMore = false;
+      lastAttemptAt = new Date().toISOString();
+      lastSuccessAt = lastAttemptAt;
+    } catch (error) {
+      if (queueSignal.aborted || stopped) return;
+      queueLoadingMore = false;
+      queueContinuationError = error instanceof Error ? error.message : "Unknown pagination error.";
+    } finally {
+      queueController = undefined;
+      if (!stopped) {
+        emptyWorkspaceRendered = false;
+        renderCurrent(currentTerminalState, currentTerminalDetail, currentDelayMs);
+        scheduleQueueRefresh(queueDelayMs);
+      }
     }
   }
 
@@ -280,10 +341,14 @@ export function createCaseFileApp({
   function handleConsoleClick(event: MouseEvent): void {
     if (!(event.target instanceof Element)) return;
     const refresh = event.target.closest<HTMLButtonElement>("[data-case-refresh]");
-    if (!refresh) return;
-    refresh.disabled = true;
-    setConnectionState(connectionTarget, "loading", "Refreshing the recorded case index.");
-    void refreshQueue();
+    if (refresh) {
+      refresh.disabled = true;
+      setConnectionState(connectionTarget, "loading", "Refreshing the recorded case index.");
+      void refreshQueue(true);
+      return;
+    }
+    const loadMore = event.target.closest<HTMLButtonElement>("[data-case-load-more]");
+    if (loadMore) void loadMoreQueue();
   }
 
   async function poll(): Promise<void> {
@@ -367,10 +432,10 @@ export function createCaseFileApp({
   root.addEventListener("click", handleConsoleClick);
 
   renderCurrent("loading", "Connecting to the append-only operational ledger.", pollIntervalMs);
-  void refreshQueue();
+  void refreshQueue(true);
   if (activeCaseId) void poll();
 
-  return { stop, pollNow: poll, refreshQueueNow: refreshQueue };
+  return { stop, pollNow: poll, refreshQueueNow: () => refreshQueue(true), loadMoreQueueNow: loadMoreQueue };
 }
 
 export function autoStartCaseFileApp(): void {

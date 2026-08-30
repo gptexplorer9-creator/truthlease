@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { HttpCaseIndexSource, parseCaseIndexFeed } from "../src/ui/case-index.js";
+import { CaseIndexPager, HttpCaseIndexSource, parseCaseIndexFeed } from "../src/ui/case-index.js";
 
 describe("case index transport", () => {
   it("parses queue entries and nextCursor", () => {
@@ -68,7 +68,7 @@ describe("case index transport", () => {
     );
     const source = new HttpCaseIndexSource({ fetch });
 
-    await source.loadCases();
+    await source.loadPage();
 
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, init] = fetch.mock.calls[0]!;
@@ -76,7 +76,7 @@ describe("case index transport", () => {
     expect(init).toMatchObject({ method: "GET", headers: { accept: "application/json" } });
   });
 
-  it("loads every case-index page and deduplicates repeated case IDs", async () => {
+  it("loads explicit continuation pages and deduplicates repeated case IDs", async () => {
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -90,9 +90,11 @@ describe("case index transport", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         cases: [{ caseId: "TL-004" }],
       }), { status: 200, headers: { "content-type": "application/json" } }));
-    const source = new HttpCaseIndexSource({ fetch });
+    const pager = new CaseIndexPager(new HttpCaseIndexSource({ fetch }));
 
-    const feed = await source.loadCases();
+    await pager.refreshFirstPage({ resetContinuation: true });
+    await pager.loadNextPage();
+    const feed = await pager.loadNextPage();
 
     expect(feed.cases.map((entry) => entry.caseId)).toEqual(["TL-001", "TL-002", "TL-003", "TL-004"]);
     expect(fetch.mock.calls.map(([url]) => url)).toEqual([
@@ -104,32 +106,54 @@ describe("case index transport", () => {
   });
 
   it("rejects repeated pagination cursors instead of looping", async () => {
-    const fetch = vi.fn(async () => new Response(JSON.stringify({
+    const fetch = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response(JSON.stringify({
       cases: [{ caseId: "TL-001" }],
       nextCursor: "cursor-cycle",
     }), { status: 200, headers: { "content-type": "application/json" } }));
-    const source = new HttpCaseIndexSource({ fetch });
+    const pager = new CaseIndexPager(new HttpCaseIndexSource({ fetch }));
 
-    await expect(source.loadCases()).rejects.toThrow(/cursor cycle/);
+    await pager.refreshFirstPage({ resetContinuation: true });
+    await expect(pager.loadNextPage()).rejects.toThrow(/cursor cycle/);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it("continues beyond twenty pages until the server ends pagination", async () => {
+  it("discovers more than one thousand cases through explicit bounded page requests", async () => {
     let page = 0;
     const fetch = vi.fn(async (_input: string | URL, _init?: RequestInit) => {
       page += 1;
+      const first = (page - 1) * 100 + 1;
       return new Response(JSON.stringify({
-        cases: [{ caseId: `TL-${String(page).padStart(3, "0")}` }],
-        ...(page <= 20 ? { nextCursor: `cursor-${page}` } : {}),
+        cases: Array.from({ length: 100 }, (_, index) => ({
+          caseId: `TL-${String(first + index).padStart(4, "0")}`,
+        })),
+        ...(page <= 10 ? { nextCursor: `cursor-${page}` } : {}),
       }), { status: 200, headers: { "content-type": "application/json" } });
     });
-    const source = new HttpCaseIndexSource({ fetch });
+    const pager = new CaseIndexPager(new HttpCaseIndexSource({ fetch }));
 
-    const feed = await source.loadCases();
+    let feed = await pager.refreshFirstPage({ resetContinuation: true });
+    while (feed.nextCursor !== undefined) feed = await pager.loadNextPage();
 
-    expect(feed.cases).toHaveLength(21);
-    expect(feed.cases.at(-1)?.caseId).toBe("TL-021");
-    expect(fetch).toHaveBeenCalledTimes(21);
-    expect(fetch.mock.calls.at(-1)?.[0]).toBe("/api/cases?cursor=cursor-20");
+    expect(feed.cases).toHaveLength(1_100);
+    expect(feed.cases.at(-1)?.caseId).toBe("TL-1100");
+    expect(fetch).toHaveBeenCalledTimes(11);
+    expect(fetch.mock.calls.at(-1)?.[0]).toBe("/api/cases?cursor=cursor-10");
+    expect(fetch.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+  });
+
+  it("keeps repeated periodic refreshes bounded to page one", async () => {
+    const fetch = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      cases: [{ caseId: "TL-NEWEST" }],
+      nextCursor: "cursor-next",
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const pager = new CaseIndexPager(new HttpCaseIndexSource({ fetch }));
+
+    await pager.refreshFirstPage({ resetContinuation: true });
+    await pager.refreshFirstPage();
+    const feed = await pager.refreshFirstPage();
+
+    expect(feed.cases).toEqual([{ caseId: "TL-NEWEST" }]);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(["/api/cases", "/api/cases", "/api/cases"]);
   });
 });
