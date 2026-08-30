@@ -1,10 +1,12 @@
 # TruthLease
 
-TruthLease is a validity-and-compensation layer for consequential agent actions.
+TruthLease stops consequential agents from acting on yesterday's truth.
 
-Agents often act correctly on evidence that later becomes stale, corrected, revoked, unsafe, or unlawful. TruthLease records what made an action valid, identifies the downstream consequences when that supporting truth changes, compiles the minimum-safe compensating transaction, pauses for human approval, executes only the approved mutation, and verifies the resulting state.
+An agent can make the right decision and still become wrong later. A recall, policy change, correction, or revoked permission can invalidate the evidence behind an earlier action. TruthLease records that dependency, finds the smallest safe correction, pauses for approval, applies only the approved change, and reads the owned state again to prove the outcome.
 
-The hackathon wedge is consumer-product recall containment. The live source is the official U.S. CPSC recall for the HABA Rainbow Rattle, item `2012261001`, batch `0925`. The operational system is an owned, synthetic retailer with one exact listing and two near matches.
+The hackathon demo uses a real U.S. CPSC recall for the HABA Rainbow Rattle, item `2012261001`, batch `0925`. The operational system is an owned synthetic retailer with one exact listing and two near matches. Only the exact item-and-batch match may change.
+
+Read the [three-minute demo journey](docs/DEMO-JOURNEY.md) or inspect the [product and P0 decision record](docs/0001-product-thesis-and-p0.md).
 
 ## P0 vertical slice
 
@@ -29,10 +31,10 @@ The atomic write revokes the invalidated lease and unpublishes its exact depende
 | TrueForge package | Pinned to official npm package `0.1.4` |
 | TrueForge model connection | Verified live with OpenAI through TrueForge |
 | Bright Data Web MCP | Authenticated and verified live through TrueForge |
-| TrueForge local Bubblewrap sandbox | Runtime available; final qualifying run pending `python3.12-venv` |
-| Genuine TrueForge approval event | Pending the clean qualifying run |
-| GitHub public repo | Connected |
-| Qodo PR review | Required and pending the proven P0 commit |
+| TrueForge local Bubblewrap sandbox | Qualifying run completed in session `01m17tygd7mztekpnzaekjmkaw`; live replay is not currently re-verifiable after the host reset |
+| Genuine TrueForge approval event | Recorded and verified in the same qualifying session before the host reset |
+| GitHub public repo | [gptexplorer9-creator/truthlease](https://github.com/gptexplorer9-creator/truthlease) |
+| Qodo PR review | [PR #1](https://github.com/gptexplorer9-creator/truthlease/pull/1) reviewed in multiple rounds; latest findings fixed in `005d3bf` |
 
 ## Local setup
 
@@ -88,7 +90,9 @@ The live event rules require TrueForge to visibly reach a real tool, run code in
 
 ## Qodo Code Review Evidence
 
-Pending. A representative merged pull request and the response to Qodo findings must be linked here before submission. This placeholder is not review evidence.
+Qodo reviewed [PR #1](https://github.com/gptexplorer9-creator/truthlease/pull/1) in multiple rounds. The branch now includes fixes for canonical evidence provenance, sandbox-turn binding, required pre-analysis state reads, approval reservation and commit semantics, retry-safe evidence binding, authorization freshness, and presenter-document encoding. The latest remediation is commit `005d3bf`. The pull request is still open and has not been merged.
+
+Release-ready copy is in [`docs/RELEASE-NOTES-v0.1.0-rc1.md`](docs/RELEASE-NOTES-v0.1.0-rc1.md). Publish a GitHub release only after the reviewed branch is merged and the hosted connector lane, if included, has its own qualifying test and review evidence.
 
 ## Sources
 
