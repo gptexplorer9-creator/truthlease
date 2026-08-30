@@ -27,57 +27,57 @@ The product-safety operator's job is not to ask an agent to "handle the recall."
 | 4. A person owns the consequential decision | What exactly will happen if I approve? | Native TrueForge pause and immutable `apply_containment_patch` arguments | The browser has no mutation control; the server requires the exact approved TrueForge call |
 | 5. The system proves the outcome | Did the intended state actually persist? | Lease revoked, exact listing unpublished, near matches still published, state version `7 -> 8` | A fresh persisted-state read, not a tool-success message, closes the case |
 
-**Closing line:** The demo does not end when a tool says success. It ends when a fresh read proves what changedand what did not.
+**Closing line:** The demo does not end when a tool says "success." It ends when a fresh read proves what changed - and what did not.
 
 ## Three-minute talk track
 
-### 0:00-0:25  Start with the consequence
+### 0:00-0:25  -  Start with the consequence
 
 **Show:** the case header and prior state.
 
-**Say:** This toy listing is already live. Its publishing decision is leased to one condition: no official recall may match item 2012261001 and batch 0925. A new CPSC recall now challenges that condition.
+**Say:** "This toy listing is already live. Its publishing decision is leased to one condition: no official recall may match item 2012261001 and batch 0925. A new CPSC recall now challenges that condition."
 
 **Do not say:** that TruthLease continuously monitors every retailer or recall. This demo begins with one live evidence-driven case.
 
-### 0:25-0:55  Establish the new fact
+### 0:25-0:55  -  Establish the new fact
 
 **Show:** Official evidence.
 
-**Say:** The agent retrieves the canonical CPSC result through Bright Data. TruthLease binds the exact response, URL, identifiers, and retrieval time to the TrueForge session before it will label the receipt as Bright Data evidence.
+**Say:** "The agent retrieves the canonical CPSC result through Bright Data. TruthLease binds the exact response, URL, identifiers, and retrieval time to the TrueForge session before it will label the receipt as Bright Data evidence."
 
 **Point at:** authority, transport, source URL, retrieval time, and hash.
 
-### 0:55-1:25  Prove the exact target
+### 0:55-1:25  -  Prove the exact target
 
 **Show:** Deterministic proof.
 
-**Say:** A title match is not enough. The sandbox applies an AND rule across item and batch. One listing matches both. Two nearby records match only one field, so they are explicitly excluded.
+**Say:** "A title match is not enough. The sandbox applies an AND rule across item and batch. One listing matches both. Two nearby records match only one field, so they are explicitly excluded."
 
 **Point at:** `LISTING-1001` as exact; `LISTING-1002` and `LISTING-1003` as exclusions.
 
-### 1:25-2:00  Stop at the human boundary
+### 1:25-2:00  -  Stop at the human boundary
 
 **Show:** Native approval.
 
-**Say:** This is the products control point. The agent has done the investigation, but no retailer state has changed. The operator sees one immutable, version-checked patch and chooses inside TrueForgenot in this browser.
+**Say:** "This is the product's control point. The agent has done the investigation, but no retailer state has changed. The operator sees one immutable, version-checked patch and chooses inside TrueForge - not in this browser."
 
 **Pause:** let the genuine approval state remain visible before approving.
 
 **Point at:** listing ID, lease ID, expected version, evidence receipt, analysis hash, and reason.
 
-### 2:00-2:30  Apply one bounded mutation
+### 2:00-2:30  -  Apply one bounded mutation
 
 **Show:** Atomic patch.
 
-**Say:** The approved backend action revokes the invalidated lease and unpublishes only its exact dependent listing in one atomic write. Changed arguments, stale versions, and duplicate non-identical patch IDs fail closed.
+**Say:** "The approved backend action revokes the invalidated lease and unpublishes only its exact dependent listing in one atomic write. Changed arguments, stale versions, and duplicate non-identical patch IDs fail closed."
 
-### 2:30-3:00  Verify, then finish
+### 2:30-3:00  -  Verify, then finish
 
 **Show:** Fresh persisted-state re-read.
 
-**Say:** A receipt alone is not the result. TruthLease reads the owned state again. The lease is revoked, the recalled listing is unpublished, both near matches remain published, and the state version matches the durable receipt.
+**Say:** "A receipt alone is not the result. TruthLease reads the owned state again. The lease is revoked, the recalled listing is unpublished, both near matches remain published, and the state version matches the durable receipt."
 
-**Finish with:** That is TruthLease: when a fact changes, an agent can trace which prior decision is no longer valid, propose the smallest action, pause for accountable approval, and prove the resulting state.
+**Finish with:** "That is TruthLease: when a fact changes, an agent can trace which prior decision is no longer valid, propose the smallest action, pause for accountable approval, and prove the resulting state."
 
 ## Presenter recovery paths
 

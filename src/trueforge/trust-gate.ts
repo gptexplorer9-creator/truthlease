@@ -79,9 +79,6 @@ export class TrueForgeSessionTrustGate implements TruthLeaseMcpTrustGate {
     missingMessage: string,
   ): TruthLeaseAuthorization {
     if (proof === undefined) throw new Error(missingMessage);
-    if (consumed.has(proof.callId)) {
-      return { commit() {}, release() {} };
-    }
     const authorizedAt = Date.parse(proof.authorizedAt);
     const age = this.now().getTime() - authorizedAt;
     if (
@@ -90,6 +87,9 @@ export class TrueForgeSessionTrustGate implements TruthLeaseMcpTrustGate {
       age < -MAX_FUTURE_CLOCK_SKEW_MS
     ) {
       throw new Error("The bound TrueForge authorization is outside the permitted freshness window.");
+    }
+    if (consumed.has(proof.callId)) {
+      return { commit() {}, release() {} };
     }
     if (reserved.has(proof.callId)) {
       throw new Error("The bound TrueForge authorization is already reserved by an active request.");

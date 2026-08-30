@@ -13,6 +13,7 @@ import type {
   ApplyContainmentPatchArguments,
   RecordRecallEvidenceInput,
 } from "../src/domain/types.js";
+import { TrueForgeSessionTrustGate } from "../src/trueforge/trust-gate.js";
 
 const sessionId = "session-p0";
 
@@ -324,5 +325,46 @@ describe("TrueForge case feed", () => {
     ];
 
     expect(verifyP0SessionEvents(sessionId, entries).passed).toBe(true);
+  });
+
+  it("rejects an idempotent replay after its consumed authorization expires", async () => {
+    const entries = qualifyingEntries();
+    const recordCall = (entries[4]!.event.tool_calls as Array<{
+      function: { arguments: string };
+    }>)[0]!;
+    const wire = JSON.parse(recordCall.function.arguments) as Record<string, string>;
+    const evidenceInput: RecordRecallEvidenceInput = {
+      sourceUrl: wire.source_url!,
+      retrievedAt: wire.retrieved_at!,
+      recallNumber: wire.recall_number!,
+      title: wire.title!,
+      productName: wire.product_name!,
+      recallDate: wire.recall_date!,
+      hazard: wire.hazard!,
+      description: wire.description!,
+      itemNumber: wire.item_number!,
+      batchCode: wire.batch_code!,
+      evidenceText: wire.evidence_text!,
+    };
+    let now = new Date(4_500);
+    const fetchImpl: typeof fetch = async () => new Response(
+      JSON.stringify({ data: entries }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+    const gate = new TrueForgeSessionTrustGate(
+      "http://127.0.0.1:8790",
+      sessionId,
+      fetchImpl,
+      () => now,
+      1_000,
+    );
+
+    const authorization = await gate.authorizeEvidence(evidenceInput);
+    authorization.commit();
+    now = new Date(5_001);
+
+    await expect(gate.authorizeEvidence(evidenceInput)).rejects.toThrow(
+      "outside the permitted freshness window",
+    );
   });
 });
