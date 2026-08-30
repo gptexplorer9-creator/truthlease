@@ -13,15 +13,20 @@ Designing one append-only operational case file for retailer operations, trust, 
 
 ## Reference lock
 
-- Primary reference: Refero Tailscale style `5d884659-1d6b-4b82-8ccd-dbb0434667a8`.
-- Preserve: light neutral canvas, compact Inter/system typography, dark high-contrast controls, quiet borders, restrained elevation, comfortable operational density, and red reserved for failed operational states.
+- Primary reference: Refero N26 "The online bank" style `59911817-9d14-445a-9f1b-617418001061`.
+- Preserve: white institutional canvas, compact system typography, evidence-led hierarchy, flat one-pixel borders, 4-6px radii, almost no shadow, comfortable operational density, and success withheld until a fresh persisted-state re-read.
 - Borrow only:
-  - Refero Operate style `a0f473eb-0310-4df5-b5f6-5bc124ad5954`: ruled-ledger grid and thin inset separators.
-  - Refero Fingerprint style `74adbdf2-822b-4df3-80d1-3c5a1b263a90`: sans-plus-monospace evidence treatment and a contained dark console for sandbox output.
+  - Refero shadcn UI style `c14c0a94-1037-449e-bf5b-4cb972656ac7`: compact density, visible focus, and bounded monospace metadata.
+  - Refero Operate style `a0f473eb-0310-4df5-b5f6-5bc124ad5954`: ruled-ledger grid and chronology gutter.
+  - Refero Trigger.dev style `45a07d72-4895-4893-b403-1e7c24449c3f`: rectangular immutable-argument blocks only.
 - Product patterns:
-  - n8n screen `1974172f-cafa-4873-96f9-8c50321e8d72`: compact execution metadata and visibly labelled error rows.
-  - Fingerprint flow `11171`: focused decision with explicit consequences and a visible no-op path. The browser adapts this into a display-only inline airlock because the actual decision remains in native TrueForge.
-  - Vercel screen `73675061-8485-4c1d-854d-d3061ce2e334`: expandable, timestamped run output.
+  - Fibery activity log `2cec7602-2f2f-4abe-afc4-cdb4a03b094f`: ordered chronology and readable event grouping.
+  - Mercury table and detail drawer `f562ada5-564b-4c9c-a86d-598dd41a57f1`: compact case index plus focused detail.
+  - Gemini sources sheet `208a6b41-0587-4abb-852c-fa9a163a5301`: authority and retrieval provenance separation.
+  - Rox permission interruption `3106d715-5410-4080-9761-fa4db061dccb` and Asana approval chronology `8679a9ab-b76b-4b47-88ee-40772651af45`: memorable permission pause inside a continuing record.
+  - GitHub side-by-side diff `4b64c360-ee73-4c4e-91e2-1c7a9b923f8b`: explicit before/after mutation proof.
+  - Resend verification table `68c8c0cf-5f11-427d-9efa-ccffaef3d9d1`: row-level post-action assertions.
+  - Mercury loading/empty `e697f79b-21fc-431c-bf64-b522a011c2c0` and Wynde failure/retry `6f4d3d78-c20c-49d8-bd44-c1bf775d5c8a`: honest non-happy states.
 - Role rules:
   - Impact red is failure-only. It is never decorative and never marks untrusted evidence merely because the evidence is adverse.
   - Green is product-semantic and appears only after a fresh persisted-state re-read passes every check.
@@ -34,19 +39,19 @@ Designing one append-only operational case file for retailer operations, trust, 
 
 | Token | Value | Role |
 | --- | --- | --- |
-| canvas | `#eeebea` | Page background only |
+| canvas | `#ffffff` | Page background only |
 | surface | `#ffffff` | Case-file paper and interactive surfaces |
-| surface-subtle | `#f7f5f4` | Hover and secondary rows |
-| ink | `#181717` | Primary text and strong borders |
-| carbon | `#2e2d2d` | Secondary text and sandbox surface |
-| muted | `#575555` | Tertiary labels with verified contrast |
-| rule | `#d7d3d1` | Ledger rules and quiet borders |
+| surface-subtle | `#faf8f5` | Differentiated rows, chronology, and secondary evidence surfaces |
+| ink | `#1b1b1b` | Primary text and strong borders |
+| carbon | `#303030` | Secondary text and sandbox surface |
+| muted | `#6d6d6d` | Tertiary labels with verified contrast |
+| rule | `#e9e9e9` | Ledger rules and quiet borders |
 | failure | `#b83d37` | Failed evidence retrieval, analysis, mutation, or verification only |
 | warning | `#7a5200` | Pending, denied, stale, and conflicts with text/icon labels |
-| verified | `#17663a` | Fresh verification success only |
+| verified | `#088177` | Primary action, active state, and fresh verification only |
 | focus | `#0b5fcc` | Keyboard focus ring only |
-| button radius | `8px` | Interactive controls |
-| panel radius | `16px` | Interactive/expandable modules only |
+| button radius | `4px` | Interactive controls |
+| panel radius | `6px` | Interactive/expandable modules only |
 | element gap | `12px` | Closely related controls and metadata |
 | stage gap | `24px` | Operational stage rhythm |
 
@@ -58,10 +63,10 @@ System UI is the production Inter substitute. `ui-monospace`, SFMono-Regular, Co
 | --- | --- | --- | --- |
 | One vertical append-only case file | Owner contract plus Operate | Ledger structure | Keeps cause, decision, action, and proof in one readable sequence. |
 | Five visible stages | Owner contract | Product requirement | Evidence, Proof, Approval, Patch, and Verified remain auditable after completion. |
-| Light technical canvas | Tailscale | Primary canvas and density | Prevents theatrical command-center framing and supports dense evidence. |
-| Neutral native-approval link | Tailscale plus owner transport contract | Dark high-contrast control | The browser can open a real TrueForge target but cannot approve, deny, or mutate; red would imply authority the link does not possess. |
-| Dark sandbox console | Fingerprint and Vercel | Code/output only | Separates deterministic program output from model narration and product chrome. |
-| Inline approval airlock without typed confirmation | Fingerprint flow plus owner contract | Focus and explicit consequences, not a browser decision control | The genuine TrueForge event and immutable arguments are the safety boundary; typing or a browser modal would add theater. |
+| Light technical canvas | N26 | Primary canvas and density | Creates an institutional verified-ledger feel without theatrical command-center framing. |
+| Neutral native-approval link | N26 plus owner transport contract | Restrained primary action | The browser can open a real TrueForge target but cannot approve, deny, or mutate; red would imply authority the link does not possess. |
+| Dark sandbox console | shadcn and Trigger.dev | Code/output only | Separates deterministic program output from model narration and product chrome. |
+| Inline approval airlock without typed confirmation | Rox, Asana, and owner contract | Focus and explicit consequences, not a browser decision control | The genuine TrueForge event and immutable arguments are the safety boundary; typing or a browser modal would add theater. |
 | Persistent verification result | Owner contract; Fingerprint toast explicitly rejected | None | A toast cannot prove a fresh persisted-state re-read and is inaccessible when it disappears. |
 | Semantic icons plus text | Refero craft guidance and WCAG | Status meaning | No stage depends on color alone. |
 | Deterministic event fold | Owner architecture | Product authority boundary | Generative UI may format explanatory text but cannot fabricate approval, patch, or verification state. |
@@ -69,5 +74,5 @@ System UI is the production Inter substitute. `ui-monospace`, SFMono-Regular, Co
 ## Build target and drift guard
 
 - Build target: this reference lock and the owner-approved event contract.
-- Must not drift: light technical canvas, single causal record, five persistent stages, destructive-red role, green-only-after-verification rule, mono evidence roles, honest failure states, and genuine approval boundary.
+- Must not drift: white institutional console, single causal record, five persistent stages, destructive-red role, teal only for action/active/fresh verification, mono evidence roles, honest failure states, and genuine approval boundary.
 - A component that does not help prove evidence, exact matching, approval, patch, or fresh verification is outside the build.
