@@ -6,6 +6,8 @@ Target length: 2 minutes 40 seconds. This is the presenter journey for a qualify
 
 An agent validly published a listing under the facts available at the time; after the official facts changed, TruthLease used canonical evidence, deterministic analysis, native human approval, one bounded local mutation, and a fresh persisted-state re-read to contain only the newly invalid action.
 
+The judge should leave with three beats: the original action was reasonable, the changed fact invalidated one dependency, and the repair stayed narrow and accountable.
+
 ## Evidence rule before presenting
 
 Use the assertive talk track below only while the corresponding evidence is visible from the same current run. A fixture, screenshot, or code path can explain the product, but it must be labelled as such and cannot establish live Bright Data retrieval, a genuine TrueForge sandbox event, native approval, mutation, or verification. If the genuine run is unavailable, present this as the intended journey and stop before claiming completion.
@@ -118,4 +120,4 @@ Bright Data is the qualifying web transport; CPSC is the source authority. TrueF
 - A genuine run requires current recorded Bright Data, native sandbox, native approval, local MCP mutation, and fresh-read events from one traceable journey.
 - The case browser displays evidence; it does not approve or mutate retailer state.
 - A successful run demonstrates this narrow containment workflow, not production readiness, continuous monitoring, marketplace coverage, retention, or autonomous authority.
-- Live URL, current genuine-run evidence, and demo video evidence remain pending until separately verified and recorded in the release checklist.
+- [truthlease.vercel.app](https://truthlease.vercel.app) exists, but its deployment predates candidate `5a08272` and its ledger is empty until a genuine run is ingested. Current-candidate deployment, genuine-run evidence, and demo video evidence remain separate gates in the release checklist.

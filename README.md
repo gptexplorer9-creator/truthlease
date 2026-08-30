@@ -22,7 +22,9 @@ prior valid action + explicit Truth Lease
 
 Bright Data is the qualifying web transport; CPSC is the source authority. TrueForge owns the native approval pause. The local TruthLease MCP owns the atomic retailer mutation. Post-action verification means a fresh read of TruthLease-owned persisted state, not independent third-party verification.
 
-## What baseline `53a6108` supports
+## What the current candidate supports
+
+Candidate `5a08272` passes the complete repository check: 22 test files and 107 tests. That result verifies controlled code behavior. It does not prove that an external service ran or that the deployed site contains a genuine case.
 
 | Surface | Repository-supported status | External evidence status |
 | --- | --- | --- |
@@ -32,8 +34,8 @@ Bright Data is the qualifying web transport; CPSC is the source authority. TrueF
 | Native approval | Manifest requires approval for `apply_containment_patch` | Current genuine TrueForge approval event pending |
 | Local MCP containment | Evidence-bound, version-checked, atomic, idempotent mutation is implemented and integration-tested | Current genuine mutation receipt pending |
 | Post-action verification | `verify_containment_state` performs a new owned-state read and checks exact and near-match outcomes | Current persisted-state re-read receipt pending |
-| Hosted case ledger | Read-only case surfaces, append-only ingestion, and outbound connector are implemented and tested | Live deployed URL pending |
-| Qodo | No repository file can establish current external review status | Current candidate review evidence pending |
+| Hosted case ledger | Read-only case surfaces, append-only ingestion, and outbound connector are implemented and tested | [truthlease.vercel.app](https://truthlease.vercel.app) exists, but its deployment predates this candidate and its ledger is empty until a genuine run is ingested |
+| Qodo | Review-driven fixes are present in the candidate | Final review evidence must be attached to the exact promoted commit |
 | Demo media | Journey and evidence map are documented | Screenshot/GIF/video pending |
 | Release/submission | Draft release notes and owner checklist exist | Owner-gated; not published or submitted |
 
@@ -78,11 +80,11 @@ If any qualifying evidence is missing, stop and label that evidence pending. A f
 
 ## Hosted read-only boundary
 
-Baseline `53a6108` implements a same-origin application for a case index, append-only operational case files, and a case/run/event ledger. `GET /api/cases` and `GET /api/cases/:caseId/events` are read surfaces. Hosted `/mcp` is disabled, and the browser has no approval or retailer-mutation endpoint.
+The current candidate implements a same-origin application for a case index, append-only operational case files, and a case/run/event ledger. `GET /api/cases` and `GET /api/cases/:caseId/events` are read surfaces. Hosted `/mcp` is disabled, and the browser has no approval or retailer-mutation endpoint.
 
-The outbound operator connector is designed to read one genuine TrueForge session through its loopback API and append authenticated event batches to `POST /api/connectors/:connectorId/events`. It cannot approve or mutate. TrueForge remains the native approval authority; the local TruthLease MCP remains the mutation authority. See [`docs/CONNECTOR.md`](docs/CONNECTOR.md).
+The outbound operator connector is designed to read one genuine TrueForge session through its loopback API and append authenticated event batches to `POST /api/connectors/:connectorId/events`. It cannot approve or mutate. Transport uses a bearer credential, while provenance attestation requires a separate HMAC secret; neither can substitute for the other. TrueForge remains the native approval authority; the local TruthLease MCP remains the mutation authority. See [`docs/CONNECTOR.md`](docs/CONNECTOR.md).
 
-An empty hosted case index means no genuine run has been ingested. Do not synthesize a demo case or cite a hosted shell as evidence of a qualifying workflow. A live URL remains pending until a deployment is separately authorized and verified.
+The hosted shell currently exists at [truthlease.vercel.app](https://truthlease.vercel.app), but that deployment predates candidate `5a08272`. Its empty case index means no genuine run has been ingested. Do not synthesize a demo case, cite the shell as workflow evidence, or describe it as the candidate deployment until the exact commit is deployed and verified with owner authorization.
 
 ## Safety properties
 

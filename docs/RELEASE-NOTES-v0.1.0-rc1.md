@@ -1,6 +1,6 @@
 # TruthLease v0.1.0-rc1 release-notes draft
 
-Source baseline: `53a6108` (`feat: ship hosted truth-repair case ledger`)
+Source candidate: `5a08272` (`fix(ui): bind verification and page case index`)
 
 Status: documentation-ready release candidate for one hackathon demo workflow. These notes are not a published GitHub release, deployment receipt, current genuine-run receipt, or submission record. TruthLease is not a production retailer integration.
 
@@ -30,7 +30,7 @@ This is an implementation description. A qualifying demonstration still requires
 
 Use [`DEMO-JOURNEY.md`](DEMO-JOURNEY.md) for the 2–3 minute judge talk track and Mermaid sequence.
 
-## Evidence supported by baseline `53a6108`
+## Evidence supported by candidate `5a08272`
 
 | Claim | Repository support |
 | --- | --- |
@@ -40,7 +40,8 @@ Use [`DEMO-JOURNEY.md`](DEMO-JOURNEY.md) for the 2–3 minute judge talk track a
 | Patch is evidence-bound, version-checked, atomic, and idempotent | Store implementation and MCP integration tests |
 | Post-action verification reads persisted owned state again | Store implementation and MCP integration tests |
 | Hosted MCP mutation surface is disabled | Hosted-mode implementation and deployment-boundary tests |
-| Hosted case/run/event ledger and outbound connector exist | Ledger/connector implementation and tests added by `53a6108` |
+| Hosted case/run/event ledger and outbound connector exist | Ledger/connector implementation plus authenticated-ingestion tests |
+| Connector provenance is independently authenticated | Required HMAC attestation secret is distinct from the bearer transport credential |
 
 The integration tests use controlled test authorization and fixtures. They do not establish a current genuine TrueForge run or live Bright Data retrieval.
 
@@ -48,10 +49,10 @@ The integration tests use controlled test authorization and fixtures. They do no
 
 | Evidence | Current release status |
 | --- | --- |
-| Build and full tests in this documentation worktree | Not run: `node_modules` is absent; pending dependency restore and rerun |
+| Build and full tests | Passed for `5a08272`: 22 test files, 107 tests |
 | Qodo review for the current candidate | Pending external review evidence |
 | Genuine Bright Data + native TrueForge sandbox + native approval run | Pending current recorded run |
-| Live hosted URL | Pending deployment and current verification |
+| Live hosted URL | [truthlease.vercel.app](https://truthlease.vercel.app) exists, but the deployment predates `5a08272` and its ledger is empty until a genuine run is ingested |
 | Screenshot/GIF/video | Pending capture; must preserve fixture and live labels |
 | GitHub release | Pending owner authorization |
 | Hackathon/Google submission | Owner-gated and not performed |
@@ -72,7 +73,7 @@ Do not infer any pending item from source comments, commit messages, fixtures, a
 
 ## Validation
 
-Documentation checks passed on 2026-08-29 for the four changed files: local Markdown links resolve, no invalid control bytes were found, and the Mermaid sequence is present. `npm run check` was not run because `node_modules` is absent. It must pass after dependencies are restored and before these notes can be promoted.
+The complete repository check passed on 2026-08-29 for candidate `5a08272`: build succeeded and Vitest passed 22 test files with 107 tests. Documentation checks also passed for local Markdown links, invalid control bytes, and the Mermaid sequence. These results verify the repository candidate only; they do not upgrade any external evidence item.
 
 See [`RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) for the evidence gates and owner handoff.
 
@@ -82,5 +83,6 @@ See [`RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) for the evidence gates and ow
 - The candidate covers one recall-containment workflow, not general recall monitoring or marketplace coverage.
 - Repository tests demonstrate code behavior under controlled inputs; they do not make fixtures live or prove external services ran.
 - A hosted shell or empty ledger is not a deployed qualifying case.
-- Current live URL, genuine run, Qodo review, and video evidence remain pending until separately verified.
+- The hosted URL exists, but its deployment predates this candidate and its empty ledger contains no genuine run evidence.
+- Current genuine run, final-candidate Qodo review, and video evidence remain pending until separately verified.
 - Release publication, deployment, and submission remain owner-gated.

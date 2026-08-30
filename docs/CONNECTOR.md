@@ -27,6 +27,16 @@ connector state to `TRUTHLEASE_CONNECTOR_STATE_PATH` (or
 `.truthlease\connector-state/<connectorId>_<caseId>_<runId>.json` by default)
 to avoid cursor and in-flight replay loss across process restarts.
 
+## Required authentication boundary
+
+Both authentication layers are required for hosted ingestion:
+
+- `TRUTHLEASE_CONNECTOR_TOKEN` is the runner's bearer transport credential; the hosted service validates it against `TRUTHLEASE_INGESTION_TOKEN`.
+- `TRUTHLEASE_CONNECTOR_ATTESTATION_SECRET` is the HMAC provenance-attestation secret configured on both ends. It must contain at least 32 UTF-8 bytes and must be distinct from either bearer-token value.
+- `TRUTHLEASE_CONNECTOR_ATTESTATION_KEY_ID` is optional and selects an explicitly configured attestation key.
+
+Missing or mismatched attestation fails closed before a ledger write. Hosted `/mcp` remains disabled: this connector can append authenticated evidence events, but it cannot invoke the local mutation authority.
+
 Hosts should use a durable `ConnectorStateStore` and reserve the in-flight batch
 ID before POST. The runner authenticates transport with a dedicated bearer
 token and separately attests provenance with HMAC-SHA256 over the canonical
