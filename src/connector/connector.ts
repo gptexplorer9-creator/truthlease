@@ -6,10 +6,22 @@ const clock: ConnectorClock = { now: () => new Date() };
 const random: ConnectorRandom = { id: () => crypto.randomUUID() };
 const validCursor = (value: ConnectorCursor | null) => value === null || (typeof value.eventId === 'string' && value.eventId.length > 0);
 
-function validateEvents(events: GenuineTrueForgeEvent[]) {
+function validateEvents(events: GenuineTrueForgeEvent[], identity: ConnectorIdentity) {
+  if (identity.runId !== identity.trueForgeSessionId) {
+    throw new ConnectorError('invalid_identity', 'Hosted runId must exactly match the genuine TrueForge session identity', false);
+  }
   const ids = new Set<string>();
   for (const event of events) {
-    if (event.genuine !== true || !event.id || ids.has(event.id) || !Number.isSafeInteger(event.sequence) || Number(event.sequence) < 1) {
+    if (
+      event.genuine !== true
+      || event.source?.name !== 'trueforge'
+      || event.source.sessionId !== identity.trueForgeSessionId
+      || event.source.runId !== identity.runId
+      || !event.id
+      || ids.has(event.id)
+      || !Number.isSafeInteger(event.sequence)
+      || Number(event.sequence) < 1
+    ) {
       throw new ConnectorError('invalid_event', 'Event source returned a non-genuine, duplicate, or unsequenced event', false);
     }
     ids.add(event.id);
@@ -54,7 +66,7 @@ export class OperatorConnector {
     this.health.status = 'draining'; this.health.lastAttemptAt = attemptAt;
     try {
       const read = await this.source.readAfter(this.state.cursor, this.config.batchSize);
-      validateEvents(read.events); this.health.pendingEvents = read.events.length;
+      validateEvents(read.events, this.identity); this.health.pendingEvents = read.events.length;
       if (!read.events.length) { this.health.status = 'healthy'; this.health.connected = true; this.health.lastSuccessAt = attemptAt; this.health.lastError = undefined; this.health.consecutiveFailures = 0; return { sent: 0, cursor: this.state.cursor }; }
       const eventIds = read.events.map((event) => event.id);
       const replay = this.state.pendingBatchId && JSON.stringify(this.state.pendingEventIds) === JSON.stringify(eventIds);
@@ -67,7 +79,13 @@ export class OperatorConnector {
       const request = await createSignedBatch(this.signer, {
         batchId,
         case: { caseId: this.identity.caseId, idempotencyKey: `case:${this.identity.caseId}`, caseType: this.identity.caseType, subject: this.identity.subject },
-        run: { runId: this.identity.runId, caseId: this.identity.caseId, idempotencyKey: `run:${this.identity.runId}`, connectorId: this.identity.connectorId },
+        run: {
+          runId: this.identity.runId,
+          caseId: this.identity.caseId,
+          idempotencyKey: `run:${this.identity.runId}`,
+          connectorId: this.identity.connectorId,
+          trueForgeSessionId: this.identity.trueForgeSessionId,
+        },
         cursor: this.state.cursor,
         events: read.events,
         sentAt,

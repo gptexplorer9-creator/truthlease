@@ -1,6 +1,12 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { FileConnectorStateStore, LoopbackTrueForgeEventSource, OperatorConnector, ServerContractIngestionClient } from '../src/connector/index.js';
+import {
+  createHmacSha256BatchSigner,
+  FileConnectorStateStore,
+  LoopbackTrueForgeEventSource,
+  OperatorConnector,
+  ServerContractIngestionClient,
+} from '../src/connector/index.js';
 
 const baseUrl = process.env.TRUTHLEASE_BASE_URL;
 const connectorId = process.env.TRUTHLEASE_CONNECTOR_ID ?? 'local-trueforge';
@@ -8,8 +14,13 @@ const caseId = process.env.TRUTHLEASE_CASE_ID;
 const runId = process.env.TRUTHLEASE_RUN_ID;
 const sessionId = process.env.TRUTHLEASE_TRUEFORGE_SESSION_ID;
 const ingestionToken = process.env.TRUTHLEASE_INGESTION_TOKEN ?? process.env.TRUTHLEASE_CONNECTOR_TOKEN;
-if (!baseUrl || !caseId || !runId || !sessionId || !ingestionToken) {
-  throw new Error('TRUTHLEASE_BASE_URL, TRUTHLEASE_CASE_ID, TRUTHLEASE_RUN_ID, TRUTHLEASE_TRUEFORGE_SESSION_ID, and a connector token are required');
+const attestationSecret = process.env.TRUTHLEASE_CONNECTOR_ATTESTATION_SECRET;
+const attestationKeyId = process.env.TRUTHLEASE_CONNECTOR_ATTESTATION_KEY_ID;
+if (!baseUrl || !caseId || !runId || !sessionId || !ingestionToken || !attestationSecret) {
+  throw new Error('TruthLease URL, case/run/session identity, transport token, and attestation secret are required');
+}
+if (runId !== sessionId) {
+  throw new Error('TRUTHLEASE_RUN_ID must exactly match TRUTHLEASE_TRUEFORGE_SESSION_ID');
 }
 
 function sanitizeSegment(value: string) {
@@ -27,10 +38,16 @@ const connector = new OperatorConnector(
     caseId,
   }),
   new ServerContractIngestionClient({ baseUrl, connectorId, authorization: `Bearer ${ingestionToken}` }),
-  // Compatibility fields only. Authentication is the bearer header over TLS (or loopback HTTP).
-  { algorithm: 'none', sign: () => '' },
+  createHmacSha256BatchSigner(attestationSecret, attestationKeyId),
   new FileConnectorStateStore({ path: statePath }),
-  { caseId, caseType: process.env.TRUTHLEASE_CASE_TYPE ?? 'trueforge.operator', subject: { leaseId: caseId, source: 'trueforge_native' }, runId, connectorId },
+  {
+    caseId,
+    caseType: process.env.TRUTHLEASE_CASE_TYPE ?? 'trueforge.operator',
+    subject: { leaseId: caseId, source: 'trueforge_native' },
+    runId,
+    connectorId,
+    trueForgeSessionId: sessionId,
+  },
   { batchSize: Number(process.env.CONNECTOR_BATCH_SIZE ?? 100), pollIntervalMs: Number(process.env.CONNECTOR_POLL_INTERVAL_MS ?? 5000), retryBaseMs: 500, retryMaxMs: 30_000, retryJitter: 0.2 },
 );
 

@@ -2,28 +2,7 @@ import { ConnectorError } from './errors.js';
 import { parseAuthorizedHttpUrl, validateAppendResponse } from './transport-validation.js';
 import type { ConnectorCursor, SignedBatchRequest, TruthLeaseIngestionClient } from './types.js';
 
-export interface ServerAppendLedgerEventInput {
-  eventId: string;
-  caseId: string;
-  runId: string;
-  sequence: number;
-  idempotencyKey: string;
-  connectorId: string;
-  eventType: string;
-  payload: Record<string, unknown>;
-  occurredAt: string;
-  cursor?: ConnectorCursor | null;
-}
-
-export interface ServerIngestionEnvelope {
-  case: SignedBatchRequest['case'];
-  run: SignedBatchRequest['run'];
-  events: ServerAppendLedgerEventInput[];
-  signature: string;
-  algorithm: string;
-  keyId?: string;
-  sentAt: string;
-}
+export type ServerIngestionEnvelope = SignedBatchRequest;
 
 export interface ServerIngestionClientOptions {
   baseUrl: string;
@@ -50,31 +29,12 @@ export class ServerContractIngestionClient implements TruthLeaseIngestionClient 
   async appendBatch(request: SignedBatchRequest) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    const envelope: ServerIngestionEnvelope = {
-      case: request.case,
-      run: request.run,
-      events: request.events.map((event) => {
-        if (!Number.isSafeInteger(event.sequence) || Number(event.sequence) < 1) {
-          throw new ConnectorError('invalid_event', 'Every TrueForge event requires a stable positive sequence', false);
-        }
-        return {
-          eventId: event.id,
-          caseId: request.case.caseId,
-          runId: request.run.runId,
-          sequence: Number(event.sequence),
-          idempotencyKey: `event:${event.id}`,
-          connectorId: request.run.connectorId,
-          eventType: event.type,
-          payload: event.payload,
-          occurredAt: event.occurredAt,
-          cursor: request.cursor,
-        };
-      }),
-      signature: request.signature,
-      algorithm: request.algorithm,
-      ...(request.keyId ? { keyId: request.keyId } : {}),
-      sentAt: request.sentAt,
-    };
+    const envelope: ServerIngestionEnvelope = request;
+    for (const event of envelope.events) {
+      if (!Number.isSafeInteger(event.sequence) || Number(event.sequence) < 1) {
+        throw new ConnectorError('invalid_event', 'Every TrueForge event requires a stable positive sequence', false);
+      }
+    }
     try {
       const response = await this.fetchImpl(this.endpoint, {
         method: 'POST',

@@ -4,6 +4,12 @@ import express, { type Request, type Response } from "express";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 
+import {
+  verifyHmacSha256BatchAttestation,
+  type ConnectorAttestationConfig,
+  type GenuineTrueForgeEvent,
+  type SignedBatchRequest,
+} from "../connector/index.js";
 import { publicState, RetailerStore } from "../infra/store.js";
 import {
   authenticateConnectorIngestion,
@@ -222,6 +228,7 @@ export interface AppOptions {
   trustGate?: TruthLeaseMcpTrustGate;
   ledger?: TruthLeaseLedger;
   connectorAuth?: ConnectorAuthenticatorConfig;
+  connectorAttestation?: ConnectorAttestationConfig;
 }
 
 type RequestWithRawBody = Request & { rawBody?: string };
@@ -240,6 +247,7 @@ interface ValidatedConnectorBatch {
   readonly caseInput: CreateLedgerCaseInput;
   readonly runInput: StartLedgerRunInput;
   readonly eventInputs: readonly AppendLedgerEventInput[];
+  readonly signedRequest: SignedBatchRequest;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -306,12 +314,47 @@ function validateConnectorBatch(
     throw new LedgerError("invalid_input", `Connector batch cannot exceed ${MAX_CONNECTOR_EVENTS} events.`);
   }
 
+  const batchId = ledgerIdentifier(body, "batchId");
+  const signature = body.signature;
+  if (typeof signature !== "string" || !/^[a-f0-9]{64}$/i.test(signature)) {
+    throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+  }
+  if (body.algorithm !== "hmac-sha256") {
+    throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+  }
+  const keyId = body.keyId;
+  if (keyId !== undefined && (typeof keyId !== "string" || keyId.length < 1 || keyId.length > 128)) {
+    throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+  }
+  const sentAt = requiredString(body, "sentAt");
+  if (!Number.isFinite(Date.parse(sentAt))) {
+    throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+  }
+  let cursor: SignedBatchRequest["cursor"] = null;
+  if (body.cursor !== null) {
+    if (!isRecord(body.cursor)) {
+      throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+    }
+    const sequence = body.cursor.sequence;
+    if (sequence !== undefined && (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 1)) {
+      throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+    }
+    cursor = {
+      eventId: ledgerIdentifier(body.cursor, "eventId"),
+      ...(typeof sequence === "number" ? { sequence } : {}),
+    };
+  }
+
   const caseId = ledgerIdentifier(rawCase, "caseId");
   const runId = ledgerIdentifier(rawRun, "runId");
   const runCaseId = ledgerIdentifier(rawRun, "caseId");
   const runConnectorId = connectorIdentifier(rawRun);
+  const trueForgeSessionId = ledgerIdentifier(rawRun, "trueForgeSessionId");
   if (runCaseId !== caseId) throw new LedgerError("invalid_input", "Run caseId must match the batch caseId.");
   if (runConnectorId !== pathConnectorId) throw new LedgerError("authentication_failed", "Connector identity mismatch.");
+  if (runId !== trueForgeSessionId) {
+    throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+  }
 
   const subject = rawCase.subject;
   if (!isRecord(subject)) throw new LedgerError("invalid_input", "Case subject must be a JSON object.");
@@ -330,23 +373,25 @@ function validateConnectorBatch(
   };
 
   let previousSequence: number | undefined;
+  const signedEvents: GenuineTrueForgeEvent[] = [];
   const eventInputs = rawEvents.map((rawEvent, index): AppendLedgerEventInput => {
     if (!isRecord(rawEvent)) throw new LedgerError("invalid_input", "Every connector event must be a JSON object.");
-    const eventType = boundedLabel(rawEvent, "eventType");
+    if (rawEvent.genuine !== true || !isRecord(rawEvent.source)) {
+      throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+    }
+    const eventType = boundedLabel(rawEvent, "type");
     if (!SUPPORTED_EVENT_TYPES.has(eventType)) {
       throw new LedgerError("invalid_input", `Unsupported event type ${eventType}.`);
     }
-    const eventCaseId = ledgerIdentifier(rawEvent, "caseId");
-    const eventRunId = ledgerIdentifier(rawEvent, "runId");
-    const eventConnectorId = connectorIdentifier(rawEvent);
-    if (eventCaseId !== caseId) {
-      throw new LedgerError("invalid_input", `Event ${index + 1} caseId must match the batch caseId.`);
-    }
-    if (eventRunId !== runId) {
-      throw new LedgerError("invalid_input", `Event ${index + 1} runId must match the batch runId.`);
-    }
-    if (eventConnectorId !== pathConnectorId) {
-      throw new LedgerError("authentication_failed", "Connector identity mismatch.");
+    const eventId = ledgerIdentifier(rawEvent, "id");
+    const sourceSessionId = ledgerIdentifier(rawEvent.source, "sessionId");
+    const sourceRunId = ledgerIdentifier(rawEvent.source, "runId");
+    if (
+      rawEvent.source.name !== "trueforge"
+      || sourceSessionId !== trueForgeSessionId
+      || sourceRunId !== runId
+    ) {
+      throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
     }
     const sequence = rawEvent.sequence;
     if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 1) {
@@ -363,20 +408,65 @@ function validateConnectorBatch(
     if (!Number.isFinite(Date.parse(occurredAt))) {
       throw new LedgerError("invalid_input", "occurredAt must be a valid timestamp.");
     }
-    return {
-      eventId: ledgerIdentifier(rawEvent, "eventId"),
-      caseId: eventCaseId,
-      runId: eventRunId,
+    const sourceVersion = rawEvent.source.version;
+    const sourceLedger = rawEvent.source.ledger;
+    if (
+      (sourceVersion !== undefined && (typeof sourceVersion !== "string" || sourceVersion.length > 128))
+      || (sourceLedger !== undefined && (typeof sourceLedger !== "string" || sourceLedger.length > 160))
+    ) {
+      throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+    }
+    signedEvents.push({
+      id: eventId,
       sequence,
-      idempotencyKey: idempotencyKey(rawEvent),
-      connectorId: eventConnectorId,
+      occurredAt,
+      type: eventType,
+      genuine: true,
+      payload,
+      source: {
+        name: "trueforge",
+        sessionId: sourceSessionId,
+        runId: sourceRunId,
+        ...(typeof sourceVersion === "string" ? { version: sourceVersion } : {}),
+        ...(typeof sourceLedger === "string" ? { ledger: sourceLedger } : {}),
+      },
+    });
+    return {
+      eventId,
+      caseId,
+      runId,
+      sequence,
+      idempotencyKey: `event:${eventId}`,
+      connectorId: pathConnectorId,
       eventType,
       payload: payload as LedgerJson,
       occurredAt,
     };
   });
 
-  return { caseInput, runInput, eventInputs };
+  const signedRequest: SignedBatchRequest = {
+    batchId,
+    case: {
+      caseId,
+      idempotencyKey: caseInput.idempotencyKey,
+      caseType: caseInput.caseType,
+      subject,
+    },
+    run: {
+      runId,
+      caseId: runCaseId,
+      idempotencyKey: runInput.idempotencyKey,
+      connectorId: runConnectorId,
+      trueForgeSessionId,
+    },
+    cursor,
+    events: signedEvents,
+    signature,
+    algorithm: "hmac-sha256",
+    ...(typeof keyId === "string" ? { keyId } : {}),
+    sentAt,
+  };
+  return { caseInput, runInput, eventInputs, signedRequest };
 }
 
 function ledgerStatus(error: LedgerError): number {
@@ -558,8 +648,8 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
   });
 
   app.post("/api/connectors/:connectorId/events", async (request: RequestWithRawBody, response) => {
-    if (!ledger || !options.connectorAuth) {
-      response.status(503).json({ error: "Authenticated connector ingestion is not configured." });
+    if (!ledger || !options.connectorAuth || !options.connectorAttestation) {
+      response.status(503).json({ error: "Authenticated and attested connector ingestion is not configured." });
       return;
     }
     try {
@@ -581,6 +671,13 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
           : { kind: "bearer" as const, token: "" };
       const verified = authenticateConnectorIngestion(options.connectorAuth, connectorId, request.rawBody ?? "", presented);
       const batch = validateConnectorBatch(request.body, connectorId);
+      const attestationCredential = options.connectorAttestation.connectors[connectorId];
+      if (
+        attestationCredential === undefined
+        || !verifyHmacSha256BatchAttestation(batch.signedRequest, attestationCredential)
+      ) {
+        throw new LedgerError("authentication_failed", "Connector provenance attestation failed.");
+      }
       const result = await ledger.ingestAuthenticatedBatch(verified, batch);
       const finalEvent = result.events.at(-1);
       const cursor = finalEvent ? { eventId: finalEvent.eventId, sequence: finalEvent.sequence } : null;

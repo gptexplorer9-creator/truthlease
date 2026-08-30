@@ -22,6 +22,8 @@ const ledger = databaseUrl
     )
   : undefined;
 const connectorToken = process.env.TRUTHLEASE_CONNECTOR_TOKEN;
+const connectorAttestationSecret = process.env.TRUTHLEASE_CONNECTOR_ATTESTATION_SECRET;
+const connectorAttestationKeyId = process.env.TRUTHLEASE_CONNECTOR_ATTESTATION_KEY_ID;
 const connectorId = process.env.TRUTHLEASE_CONNECTOR_ID ?? "local-trueforge";
 
 const app = express();
@@ -33,8 +35,18 @@ app.use(createApp(store, {
   projectRoot,
   hostedReadOnly: true,
   ...(ledger ? { ledger } : {}),
-  ...(connectorToken
-    ? { connectorAuth: { connectors: { [connectorId]: { kind: "bearer", token: connectorToken } } } }
+  ...(connectorToken && connectorAttestationSecret
+    ? {
+        connectorAuth: { connectors: { [connectorId]: { kind: "bearer" as const, token: connectorToken } } },
+        connectorAttestation: {
+          connectors: {
+            [connectorId]: {
+              secret: connectorAttestationSecret,
+              ...(connectorAttestationKeyId ? { keyId: connectorAttestationKeyId } : {}),
+            },
+          },
+        },
+      }
     : {}),
 }));
 

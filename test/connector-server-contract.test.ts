@@ -6,10 +6,10 @@ describe("connector server contract", () => {
   const request = {
     batchId: "b1",
     case: { caseId: "TL-042", idempotencyKey: "case:TL-042", caseType: "trueforge.operator", subject: {} },
-    run: { runId: "run-1", caseId: "TL-042", idempotencyKey: "run:run-1", connectorId: "local-trueforge" },
+    run: { runId: "run-1", caseId: "TL-042", idempotencyKey: "run:run-1", connectorId: "local-trueforge", trueForgeSessionId: "run-1" },
     cursor: null,
-    events: [{ id: "e1", sequence: 1, occurredAt: "2026-08-29T00:00:00.000Z", type: "state.snapshot", genuine: true as const, payload: {} }],
-    signature: "", algorithm: "none", sentAt: "2026-08-29T00:00:00.000Z",
+    events: [{ id: "e1", sequence: 1, occurredAt: "2026-08-29T00:00:00.000Z", type: "state.snapshot", genuine: true as const, payload: {}, source: { name: "trueforge" as const, sessionId: "run-1", runId: "run-1" } }],
+    signature: "a".repeat(64), algorithm: "hmac-sha256" as const, sentAt: "2026-08-29T00:00:00.000Z",
   };
 
   it("rejects bearer authorization over non-loopback plain HTTP", () => {
@@ -37,7 +37,7 @@ describe("connector server contract", () => {
     const payload = JSON.parse(String(seen?.init?.body)) as Record<string, any>;
     expect(payload.case.idempotencyKey).toBe("case:TL-042");
     expect(payload.run.idempotencyKey).toBe("run:run-1");
-    expect(payload.events[0]).toMatchObject({ eventId: "e1", caseId: "TL-042", runId: "run-1", connectorId: "local-trueforge", eventType: "state.snapshot" });
+    expect(payload.events[0]).toMatchObject({ id: "e1", type: "state.snapshot", genuine: true, source: { name: "trueforge", sessionId: "run-1", runId: "run-1" } });
     expect((seen?.init?.headers as Record<string, string>).authorization).toBe("Bearer secret");
   });
 

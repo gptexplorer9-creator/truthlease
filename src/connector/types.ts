@@ -11,7 +11,13 @@ export interface GenuineTrueForgeEvent {
   type: string;
   genuine: true;
   payload: Record<string, unknown>;
-  source?: { name?: string; version?: string; ledger?: string };
+  source: {
+    name: 'trueforge';
+    sessionId: string;
+    runId: string;
+    version?: string;
+    ledger?: string;
+  };
 }
 
 export interface TrueForgeEventSource {
@@ -36,7 +42,7 @@ export interface ConnectorStateStore {
 }
 
 export interface BatchSigner {
-  algorithm: string;
+  algorithm: 'hmac-sha256';
   keyId?: string;
   sign(input: Uint8Array): Promise<string> | string;
 }
@@ -47,16 +53,23 @@ export interface ConnectorIdentity {
   subject: Record<string, unknown>;
   runId: string;
   connectorId: string;
+  trueForgeSessionId: string;
 }
 
 export interface SignedBatchRequest {
   batchId: string;
   case: { caseId: string; idempotencyKey: string; caseType: string; subject: Record<string, unknown> };
-  run: { runId: string; caseId: string; idempotencyKey: string; connectorId: string };
+  run: {
+    runId: string;
+    caseId: string;
+    idempotencyKey: string;
+    connectorId: string;
+    trueForgeSessionId: string;
+  };
   cursor: ConnectorCursor | null;
   events: GenuineTrueForgeEvent[];
   signature: string;
-  algorithm: string;
+  algorithm: 'hmac-sha256';
   keyId?: string;
   sentAt: string;
 }

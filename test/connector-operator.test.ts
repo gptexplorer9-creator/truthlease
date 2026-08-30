@@ -2,7 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import { MemoryConnectorStateStore, OperatorConnector, canonicalJson, type GenuineTrueForgeEvent, type TrueForgeEventSource, type TruthLeaseIngestionClient } from "../src/connector/index.js";
 
-const event = (id: string, sequence: number): GenuineTrueForgeEvent => ({ id, sequence, occurredAt: "2026-08-29T00:00:00.000Z", type: "state.snapshot", genuine: true, payload: { sequence } });
+const event = (id: string, sequence: number): GenuineTrueForgeEvent => ({
+  id,
+  sequence,
+  occurredAt: "2026-08-29T00:00:00.000Z",
+  type: "state.snapshot",
+  genuine: true,
+  payload: { sequence },
+  source: { name: "trueforge", sessionId: "run-1", runId: "run-1" },
+});
+const identity = {
+  caseId: "case-1",
+  caseType: "test",
+  subject: {},
+  runId: "run-1",
+  connectorId: "connector-1",
+  trueForgeSessionId: "run-1",
+};
 class Source implements TrueForgeEventSource {
   constructor(private readonly events: GenuineTrueForgeEvent[]) {}
   async readAfter(cursor: { eventId: string } | null, limit: number) {
@@ -31,8 +47,8 @@ describe("outbound operator connector", () => {
     };
     const connector = new OperatorConnector(
       new Source([event("e1", 1)]), client,
-      { algorithm: "test", sign: () => "sig" }, store,
-      { caseId: "case-1", caseType: "test", subject: {}, runId: "run-1", connectorId: "connector-1" },
+      { algorithm: "hmac-sha256", sign: () => "a".repeat(64) }, store,
+      identity,
       {}, { now: () => new Date("2026-08-29T00:00:00.000Z") }, { id: () => "batch-1" },
     );
     expect((await connector.syncOnce()).sent).toBe(1);
@@ -45,7 +61,7 @@ describe("outbound operator connector", () => {
     let called = false;
     const bad = { ...event("e1", 1), genuine: false } as unknown as GenuineTrueForgeEvent;
     const client: TruthLeaseIngestionClient = { async appendBatch() { called = true; return { accepted: true, cursor: { eventId: "e1" } }; } };
-    const connector = new OperatorConnector(new Source([bad]), client, { algorithm: "test", sign: () => "sig" }, new MemoryConnectorStateStore(), { caseId: "case-1", caseType: "test", subject: {}, runId: "run-1", connectorId: "connector-1" });
+    const connector = new OperatorConnector(new Source([bad]), client, { algorithm: "hmac-sha256", sign: () => "a".repeat(64) }, new MemoryConnectorStateStore(), identity);
     await expect(connector.syncOnce()).rejects.toThrow(/non-genuine/);
     expect(called).toBe(false);
   });
@@ -57,9 +73,9 @@ describe("outbound operator connector", () => {
     const connector = new OperatorConnector(
       source,
       { async appendBatch() { throw new Error("not reached"); } },
-      { algorithm: "none", sign: () => "" },
+      { algorithm: "hmac-sha256", sign: () => "a".repeat(64) },
       new MemoryConnectorStateStore(),
-      { caseId: "case-1", caseType: "test", subject: {}, runId: "run-1", connectorId: "connector-1" },
+      identity,
       { retryBaseMs: 250, retryMaxMs: 2_000, retryJitter: 0, pollIntervalMs: 5_000 },
     );
     await expect(connector.syncOnce()).rejects.toThrow("temporarily unavailable");

@@ -9,9 +9,14 @@ The server contract is `POST /api/connectors/:connectorId/events` with JSON:
 
 ```json
 {
+  "batchId": "...",
   "case": { "caseId": "...", "idempotencyKey": "...", "caseType": "...", "subject": {} },
-  "run": { "runId": "...", "caseId": "...", "idempotencyKey": "...", "connectorId": "..." },
-  "events": [], "signature": "", "algorithm": "none", "sentAt": "..."
+  "run": { "runId": "...", "caseId": "...", "idempotencyKey": "...", "connectorId": "...", "trueForgeSessionId": "..." },
+  "cursor": null,
+  "events": [{ "id": "...", "genuine": true, "source": { "name": "trueforge", "sessionId": "...", "runId": "..." } }],
+  "signature": "<HMAC-SHA256 hex>",
+  "algorithm": "hmac-sha256",
+  "sentAt": "..."
 }
 ```
 
@@ -23,12 +28,19 @@ connector state to `TRUTHLEASE_CONNECTOR_STATE_PATH` (or
 to avoid cursor and in-flight replay loss across process restarts.
 
 Hosts should use a durable `ConnectorStateStore` and reserve the in-flight batch
-ID before POST. The body-level `signature` and `algorithm` properties remain
-only for wire compatibility; they are not an authentication or cryptographic
-verification boundary. The runner authenticates with a dedicated bearer token
-and refuses to send that credential over plain HTTP except to an exact loopback
-host. Use HTTPS for every remote TruthLease endpoint. Never reuse the bearer
-token as signing material, and never log credentials or event payloads.
+ID before POST. The runner authenticates transport with a dedicated bearer
+token and separately attests provenance with HMAC-SHA256 over the canonical
+batch ID, case, run, cursor, genuine TrueForge source identity, complete event
+content, and sent time. The hosted ledger rejects missing, changed, or
+session-mismatched attestations before any write. Set
+`TRUTHLEASE_CONNECTOR_ATTESTATION_SECRET` to a distinct secret of at least 32
+UTF-8 bytes on both ends; an optional
+`TRUTHLEASE_CONNECTOR_ATTESTATION_KEY_ID` supports explicit key selection.
+The hosted `runId`, TrueForge session ID, and every event source run/session
+must match exactly. The runner refuses to send bearer credentials over plain
+HTTP except to an exact loopback host. Use HTTPS for every remote TruthLease
+endpoint. Never reuse the bearer token as attestation material, and never log
+credentials or event payloads.
 
 Loopback source configuration and endpoint credentials are host-owned; the
 connector itself adds no paid service or resource. Successful steady-state

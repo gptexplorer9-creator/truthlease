@@ -1,4 +1,5 @@
 import { createServer, type Server } from "node:http";
+import { createHmac } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +18,7 @@ import type {
   TruthLeaseLedger,
 } from "../src/ledger/index.js";
 import { createApp } from "../src/mcp/server.js";
+import { signingBytes, type SigningEnvelope } from "../src/connector/index.js";
 
 class RouteLedger {
   public writes = 0;
@@ -83,8 +85,11 @@ class RouteLedger {
   }
 }
 
+const attestationSecret = "route-attestation-secret-32-bytes-minimum";
+
 function batch() {
-  return {
+  const envelope: SigningEnvelope = {
+    batchId: "batch-1",
     case: {
       caseId: "TL-042",
       idempotencyKey: "case-TL-042",
@@ -96,31 +101,35 @@ function batch() {
       caseId: "TL-042",
       idempotencyKey: "run-run-1",
       connectorId: "bright-data",
+      trueForgeSessionId: "run-1",
     },
+    cursor: null,
     events: [
       {
-        eventId: "event-1",
-        caseId: "TL-042",
-        runId: "run-1",
+        id: "event-1",
         sequence: 1,
-        idempotencyKey: "event-event-1",
-        connectorId: "bright-data",
-        eventType: "state.snapshot",
+        type: "state.snapshot",
+        genuine: true,
+        source: { name: "trueforge", sessionId: "run-1", runId: "run-1" },
         payload: { lease: { lease_id: "TL-042", status: "active" } },
         occurredAt: "2026-08-29T19:59:00.000Z",
       },
       {
-        eventId: "event-2",
-        caseId: "TL-042",
-        runId: "run-1",
+        id: "event-2",
         sequence: 2,
-        idempotencyKey: "event-event-2",
-        connectorId: "bright-data",
-        eventType: "evidence.fetched",
+        type: "evidence.fetched",
+        genuine: true,
+        source: { name: "trueforge", sessionId: "run-1", runId: "run-1" },
         payload: { title: "Official recall" },
         occurredAt: "2026-08-29T19:59:01.000Z",
       },
     ],
+    sentAt: "2026-08-29T20:00:00.000Z",
+  };
+  return {
+    ...envelope,
+    algorithm: "hmac-sha256" as const,
+    signature: createHmac("sha256", attestationSecret).update(signingBytes(envelope)).digest("hex"),
   };
 }
 
@@ -138,6 +147,7 @@ describe("hosted connector ingestion routes", () => {
       hostedReadOnly: true,
       ledger: ledger as unknown as TruthLeaseLedger,
       connectorAuth: { connectors: { "bright-data": { kind: "bearer", token: "route-secret" } } },
+      connectorAttestation: { connectors: { "bright-data": { secret: attestationSecret } } },
     }));
     await new Promise<void>((resolve, reject) => {
       httpServer.once("error", reject);
@@ -170,6 +180,20 @@ describe("hosted connector ingestion routes", () => {
     expect(ledger.writes).toBe(0);
   });
 
+  it("rejects a valid bearer when provenance attestation is missing, changed, or session-mismatched", async () => {
+    const missing = { ...batch(), signature: "" };
+    expect((await ingest(missing)).status).toBe(401);
+
+    const changed = batch();
+    changed.events[0]!.payload = { lease: { lease_id: "TL-forged", status: "active" } };
+    expect((await ingest(changed)).status).toBe(401);
+
+    const mismatched = batch();
+    mismatched.events[0]!.source.sessionId = "another-session";
+    expect((await ingest(mismatched)).status).toBe(401);
+    expect(ledger.writes).toBe(0);
+  });
+
   it("ingests, reads after a sequence cursor, and reports an exact replay", async () => {
     const first = await ingest(batch());
     expect(first.status).toBe(202);
@@ -196,9 +220,9 @@ describe("hosted connector ingestion routes", () => {
 
   it("prevalidates cross-bound identities and the entire malformed batch before any write", async () => {
     const crossBound = batch();
-    crossBound.events[1]!.runId = "other-run";
+    crossBound.events[1]!.source.runId = "other-run";
     const crossResponse = await ingest(crossBound);
-    expect(crossResponse.status).toBe(400);
+    expect(crossResponse.status).toBe(401);
     expect(ledger.writes).toBe(0);
 
     const nonContiguous = batch();
@@ -208,7 +232,7 @@ describe("hosted connector ingestion routes", () => {
     expect(ledger.writes).toBe(0);
 
     const unsupported = batch();
-    unsupported.events[1]!.eventType = "arbitrary.event";
+    unsupported.events[1]!.type = "arbitrary.event";
     const typeResponse = await ingest(unsupported);
     expect(typeResponse.status).toBe(400);
     expect(ledger.writes).toBe(0);
@@ -216,8 +240,7 @@ describe("hosted connector ingestion routes", () => {
     const tooLarge = batch();
     tooLarge.events = Array.from({ length: 101 }, (_, index) => ({
       ...tooLarge.events[0]!,
-      eventId: `event-${index + 1}`,
-      idempotencyKey: `event-key-${index + 1}`,
+      id: `event-${index + 1}`,
       sequence: index + 1,
     }));
     const sizeResponse = await ingest(tooLarge);

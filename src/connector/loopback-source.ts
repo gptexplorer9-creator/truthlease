@@ -33,7 +33,12 @@ export class LoopbackTrueForgeEventSource implements TrueForgeEventSource {
         type: event.type,
         genuine: true,
         payload: event.payload,
-        source: { name: 'trueforge', ledger: this.options.sessionId },
+        source: {
+          name: 'trueforge',
+          sessionId: this.options.sessionId,
+          runId: event.runId,
+          ledger: this.options.sessionId,
+        },
       }));
       const last = events.at(-1);
       return {
