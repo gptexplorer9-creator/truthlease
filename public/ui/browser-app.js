@@ -88,7 +88,7 @@ function renderIntoRoot(root, html) {
     root.innerHTML = html;
     restoreRootInteractionState(root, interactionState);
 }
-export function createCaseFileApp({ root, connectionTarget, source = new HttpCaseEventSource(), queueSource = new HttpCaseIndexSource(), caseId = resolveCaseId(root), pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, queuePollIntervalMs = DEFAULT_QUEUE_POLL_INTERVAL_MS, }) {
+export function createCaseFileApp({ root, connectionTarget, source = new HttpCaseEventSource(), queueSource = new HttpCaseIndexSource(), caseId = resolveCaseId(root), pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, queuePollIntervalMs = DEFAULT_QUEUE_POLL_INTERVAL_MS, trueForgeExpectedOrigin, }) {
     if (!(root instanceof HTMLElement)) {
         throw new Error("TruthLease requires a valid app root.");
     }
@@ -133,6 +133,7 @@ export function createCaseFileApp({ root, connectionTarget, source = new HttpCas
             lastAttemptAt,
             lastSuccessAt,
             pageHref: currentPageHref(),
+            trueForgeExpectedOrigin,
             queueCases,
             queueState,
             queueHasMore,

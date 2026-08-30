@@ -66,9 +66,16 @@ describe("operational case-file renderer", () => {
     expect(html).not.toContain("mutation endpoint");
   });
 
-  it("shows a real native approval target but suppresses unsafe schemes", () => {
+  it("shows a native approval target only for the trusted expected local origin", () => {
     const pending = completeFeed(completeEvents.slice(0, 4));
-    const realTarget = renderCaseHtml(buildCaseViewModel(pending));
+    const noTrustedRuntime = renderCaseHtml(buildCaseViewModel(pending));
+    expect(noTrustedRuntime).not.toContain("Open genuine TrueForge approval");
+    expect(noTrustedRuntime).not.toContain("http://127.0.0.1:8790/session/approval-001");
+
+    const realTarget = renderCaseHtml(buildCaseViewModel(pending), {
+      pageHref: "http://127.0.0.1:8788/?case=TL-042",
+      trueForgeExpectedOrigin: "http://127.0.0.1:8790",
+    });
     expect(realTarget).toContain("Open genuine TrueForge approval");
     expect(realTarget).toContain("Approve exact patch in TrueForge");
     expect(realTarget).toContain("Deny in TrueForge");
@@ -88,6 +95,31 @@ describe("operational case-file renderer", () => {
     expect(unsafeTarget).not.toContain("javascript:");
     expect(unsafeTarget).not.toContain("Open genuine TrueForge approval");
     expect(unsafeTarget).toContain("No verified TrueForge approval target was supplied");
+  });
+
+  it.each([
+    ["plain HTTP attacker", "http://attacker.example/session/approval-001"],
+    ["HTTPS attacker", "https://attacker.example/session/approval-001"],
+    ["loopback origin mismatch", "http://127.0.0.1:8791/session/approval-001"],
+  ])("suppresses a %s approval target", (_label, href) => {
+    const request = fixtureEvent(4, "approval.required", {
+      approvalId: "approval-attacker",
+      action: "apply_containment_patch",
+      resolutionMode: "trueforge_native",
+      status: "pending",
+      trueforgeTarget: { href },
+    });
+    const html = renderCaseHtml(
+      buildCaseViewModel(completeFeed([...completeEvents.slice(0, 3), request])),
+      {
+        pageHref: "http://127.0.0.1:8788/?case=TL-042",
+        trueForgeExpectedOrigin: "http://127.0.0.1:8790",
+      },
+    );
+
+    expect(html).not.toContain(href);
+    expect(html).not.toContain("Open genuine TrueForge approval");
+    expect(html).toContain("Open the native TrueForge session directly");
   });
 
   it("escapes hostile source content instead of interpreting it as markup", () => {

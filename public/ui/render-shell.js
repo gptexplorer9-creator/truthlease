@@ -57,26 +57,55 @@ function safeHttpUrl(value) {
 function isLoopbackHost(hostname) {
     return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
 }
-function pageAllowsLoopback(pageHref) {
+function isLocalHttpPage(pageHref) {
     if (!pageHref || pageHref.trim() === "")
-        return true;
+        return false;
     try {
         const page = new URL(pageHref);
-        return page.protocol === "file:" || isLoopbackHost(page.hostname);
+        return page.protocol === "http:" && isLoopbackHost(page.hostname) && !page.username && !page.password;
     }
     catch {
-        return true;
+        return false;
     }
 }
-function approvalTarget(value, pageHref) {
+function trustedTrueForgeOrigin(value) {
+    if (!value || value.trim() === "")
+        return undefined;
+    try {
+        const configured = new URL(value);
+        if (configured.protocol !== "http:" ||
+            !isLoopbackHost(configured.hostname) ||
+            configured.username ||
+            configured.password ||
+            configured.pathname !== "/" ||
+            configured.search ||
+            configured.hash) {
+            return undefined;
+        }
+        return configured.origin;
+    }
+    catch {
+        return undefined;
+    }
+}
+function approvalTarget(value, pageHref, expectedOriginValue) {
     const href = safeHttpUrl(value);
     if (!href) {
         return { href: undefined, blocked: false };
     }
     try {
         const target = new URL(href);
-        if (!pageAllowsLoopback(pageHref) && isLoopbackHost(target.hostname)) {
+        if (!isLocalHttpPage(pageHref) && isLoopbackHost(target.hostname)) {
             return { href: undefined, blocked: true };
+        }
+        const expectedOrigin = trustedTrueForgeOrigin(expectedOriginValue);
+        if (!expectedOrigin ||
+            target.protocol !== "http:" ||
+            !isLoopbackHost(target.hostname) ||
+            target.username ||
+            target.password ||
+            target.origin !== expectedOrigin) {
+            return { href: undefined, blocked: false };
         }
     }
     catch {
@@ -122,6 +151,7 @@ function normalizeRuntime(model, runtime, fallbackState) {
         lastAttemptAt: runtime?.lastAttemptAt,
         lastSuccessAt: runtime?.lastSuccessAt,
         pageHref: runtime?.pageHref,
+        trueForgeExpectedOrigin: runtime?.trueForgeExpectedOrigin,
         queueCases: runtime?.queueCases ?? [],
         queueState: runtime?.queueState ?? "loading",
         queueHasMore: runtime?.queueHasMore === true,
@@ -351,7 +381,7 @@ function renderApproval(model, runtime) {
     const action = firstString(requestPayload, "action", "tool_name", "toolName");
     const approvalId = firstString(requestPayload, "approvalId", "approval_id");
     const target = objectValue(requestPayload, "trueforgeTarget") ?? objectValue(requestPayload, "trueforge_target");
-    const targetInfo = approvalTarget(firstString(target, "href", "url"), runtime.pageHref);
+    const targetInfo = approvalTarget(firstString(target, "href", "url"), runtime.pageHref, runtime.trueForgeExpectedOrigin);
     const decision = firstString(resolution?.payload, "decision", "status");
     const actor = firstString(resolution?.payload, "actor", "resolved_by", "resolvedBy");
     let stateCopy = `<p class="empty-state">Deterministic proof must complete before TrueForge can request approval.</p>`;
@@ -567,7 +597,7 @@ function redactActivityPayload(event, runtime) {
     const originalHref = firstString(target, "href", "url");
     if (!originalHref)
         return event.payload;
-    const targetInfo = approvalTarget(originalHref, runtime.pageHref);
+    const targetInfo = approvalTarget(originalHref, runtime.pageHref, runtime.trueForgeExpectedOrigin);
     const replacement = targetInfo.blocked
         ? "[hosted shell blocked local target]"
         : targetInfo.href

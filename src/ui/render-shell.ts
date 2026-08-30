@@ -64,6 +64,8 @@ export interface RenderRuntimeState {
   lastAttemptAt?: string;
   lastSuccessAt?: string;
   pageHref?: string;
+  /** Trusted application configuration. Never derive this origin from case-feed events. */
+  trueForgeExpectedOrigin?: string;
   queueCases?: readonly QueueCaseSummary[];
   queueState?: QueueState;
   queueHasMore?: boolean;
@@ -79,6 +81,7 @@ interface NormalizedRuntimeState {
   lastAttemptAt?: string;
   lastSuccessAt?: string;
   pageHref?: string;
+  trueForgeExpectedOrigin?: string;
   queueCases: readonly QueueCaseSummary[];
   queueState: QueueState;
   queueHasMore: boolean;
@@ -114,19 +117,41 @@ function isLoopbackHost(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]" || hostname === "::1";
 }
 
-function pageAllowsLoopback(pageHref: string | undefined): boolean {
-  if (!pageHref || pageHref.trim() === "") return true;
+function isLocalHttpPage(pageHref: string | undefined): boolean {
+  if (!pageHref || pageHref.trim() === "") return false;
   try {
     const page = new URL(pageHref);
-    return page.protocol === "file:" || isLoopbackHost(page.hostname);
+    return page.protocol === "http:" && isLoopbackHost(page.hostname) && !page.username && !page.password;
   } catch {
-    return true;
+    return false;
+  }
+}
+
+function trustedTrueForgeOrigin(value: string | undefined): string | undefined {
+  if (!value || value.trim() === "") return undefined;
+  try {
+    const configured = new URL(value);
+    if (
+      configured.protocol !== "http:" ||
+      !isLoopbackHost(configured.hostname) ||
+      configured.username ||
+      configured.password ||
+      configured.pathname !== "/" ||
+      configured.search ||
+      configured.hash
+    ) {
+      return undefined;
+    }
+    return configured.origin;
+  } catch {
+    return undefined;
   }
 }
 
 function approvalTarget(
   value: unknown,
   pageHref: string | undefined,
+  expectedOriginValue: string | undefined,
 ): { href?: string; blocked: boolean } {
   const href = safeHttpUrl(value);
   if (!href) {
@@ -134,8 +159,19 @@ function approvalTarget(
   }
   try {
     const target = new URL(href);
-    if (!pageAllowsLoopback(pageHref) && isLoopbackHost(target.hostname)) {
+    if (!isLocalHttpPage(pageHref) && isLoopbackHost(target.hostname)) {
       return { href: undefined, blocked: true };
+    }
+    const expectedOrigin = trustedTrueForgeOrigin(expectedOriginValue);
+    if (
+      !expectedOrigin ||
+      target.protocol !== "http:" ||
+      !isLoopbackHost(target.hostname) ||
+      target.username ||
+      target.password ||
+      target.origin !== expectedOrigin
+    ) {
+      return { href: undefined, blocked: false };
     }
   } catch {
     return { href: undefined, blocked: false };
@@ -187,6 +223,7 @@ function normalizeRuntime(
     lastAttemptAt: runtime?.lastAttemptAt,
     lastSuccessAt: runtime?.lastSuccessAt,
     pageHref: runtime?.pageHref,
+    trueForgeExpectedOrigin: runtime?.trueForgeExpectedOrigin,
     queueCases: runtime?.queueCases ?? [],
     queueState: runtime?.queueState ?? "loading",
     queueHasMore: runtime?.queueHasMore === true,
@@ -432,7 +469,11 @@ function renderApproval(model: CaseViewModel, runtime: NormalizedRuntimeState): 
   const action = firstString(requestPayload, "action", "tool_name", "toolName");
   const approvalId = firstString(requestPayload, "approvalId", "approval_id");
   const target = objectValue(requestPayload, "trueforgeTarget") ?? objectValue(requestPayload, "trueforge_target");
-  const targetInfo = approvalTarget(firstString(target, "href", "url"), runtime.pageHref);
+  const targetInfo = approvalTarget(
+    firstString(target, "href", "url"),
+    runtime.pageHref,
+    runtime.trueForgeExpectedOrigin,
+  );
   const decision = firstString(resolution?.payload, "decision", "status");
   const actor = firstString(resolution?.payload, "actor", "resolved_by", "resolvedBy");
 
@@ -657,7 +698,7 @@ function redactActivityPayload(event: RunEvent, runtime: NormalizedRuntimeState)
   const originalHref = firstString(target, "href", "url");
   if (!originalHref) return event.payload;
 
-  const targetInfo = approvalTarget(originalHref, runtime.pageHref);
+  const targetInfo = approvalTarget(originalHref, runtime.pageHref, runtime.trueForgeExpectedOrigin);
   const replacement = targetInfo.blocked
     ? "[hosted shell blocked local target]"
     : targetInfo.href

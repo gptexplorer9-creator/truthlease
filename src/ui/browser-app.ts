@@ -129,6 +129,7 @@ export function createCaseFileApp({
   caseId = resolveCaseId(root),
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
   queuePollIntervalMs = DEFAULT_QUEUE_POLL_INTERVAL_MS,
+  trueForgeExpectedOrigin,
 }: {
   root: HTMLElement;
   connectionTarget: HTMLElement;
@@ -137,6 +138,8 @@ export function createCaseFileApp({
   caseId?: string;
   pollIntervalMs?: number;
   queuePollIntervalMs?: number;
+  /** Trusted application configuration; case-feed payloads must never set this value. */
+  trueForgeExpectedOrigin?: string;
 }) {
   if (!(root instanceof HTMLElement)) {
     throw new Error("TruthLease requires a valid app root.");
@@ -184,6 +187,7 @@ export function createCaseFileApp({
       lastAttemptAt,
       lastSuccessAt,
       pageHref: currentPageHref(),
+      trueForgeExpectedOrigin,
       queueCases,
       queueState,
       queueHasMore,

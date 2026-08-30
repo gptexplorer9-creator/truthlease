@@ -56,6 +56,7 @@ describe("ui truthfulness gates", () => {
     const pending = buildCaseViewModel(completeFeed(completeEvents.slice(0, 4)));
     const html = renderCaseHtml(pending, {
       pageHref: "https://truthlease.example/case/TL-042",
+      trueForgeExpectedOrigin: "http://127.0.0.1:8790",
       queueState: "ready",
       queueCases: [
         {
