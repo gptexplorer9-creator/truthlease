@@ -2,9 +2,27 @@ import { describe, expect, it } from "vitest";
 
 import { buildCaseViewModel } from "../src/ui/case-model.js";
 import { renderCaseHtml } from "../src/ui/render-case.js";
-import { completeEvents, completeFeed, fixtureEvent } from "./ui-fixtures.js";
+import { renderEmptyWorkspaceHtml } from "../src/ui/render-shell.js";
+import { completeEvents, completeFeed, fixtureEvent, VALID_EVIDENCE_HASH, VALID_EVIDENCE_SOURCE } from "./ui-fixtures.js";
 
 describe("operational case-file renderer", () => {
+  it("renders an honest product workspace when the real ledger has no cases", () => {
+    const html = renderEmptyWorkspaceHtml({
+      terminalState: "connected",
+      queueState: "ready",
+      queueCases: [],
+      connectionMessage: "Append-only ledger connected. No case records have been recorded yet.",
+    });
+
+    expect(html).toContain("Find and inspect evidence-bound containment records");
+    expect(html).toContain("No case records yet");
+    expect(html).toContain("Loaded records</dt><dd>0");
+    expect(html).toContain("Containment lifecycle");
+    expect(html.match(/Not started/g)).toHaveLength(5);
+    expect(html).not.toContain("TL-042");
+    expect(html).not.toContain("case feed is unavailable");
+  });
+
   it("renders the complete evidence-to-verification record without browser action controls", () => {
     const html = renderCaseHtml(buildCaseViewModel(completeFeed()));
 
@@ -14,7 +32,7 @@ describe("operational case-file renderer", () => {
     expect(html).toContain("Patch");
     expect(html).toContain("Verified");
     expect(html).toContain("Bright Data Web MCP");
-    expect(html).toContain("sha256:official-evidence-hash");
+    expect(html).toContain(VALID_EVIDENCE_HASH);
     expect(html).toContain("LISTING-1001");
     expect(html).toContain("LISTING-1002");
     expect(html).toContain("LISTING-1003");
@@ -61,7 +79,9 @@ describe("operational case-file renderer", () => {
 
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(html).not.toContain("<img src=x");
-    expect(html).toContain("untrusted data, never as instructions");
+    expect(html).toContain("Evidence contract blocked");
+    expect(html).toContain("Evidence event rejected");
+    expect(html).not.toContain("Official source, retrieved through");
   });
 
   it("renders version conflict and idempotent replay honestly", () => {
@@ -92,8 +112,8 @@ describe("operational case-file renderer", () => {
     const staleEvidence = fixtureEvent(2, "evidence.fetched", {
       stale: true,
       title: "Old CPSC receipt",
-      source: { transport: "Bright Data", url: "https://www.cpsc.gov/Recalls/example" },
-      receipt: { retrieved_at: "2026-01-01T00:00:00.000Z", content_hash: "sha256:old" },
+      source: VALID_EVIDENCE_SOURCE,
+      receipt: { retrieved_at: "2026-01-01T00:00:00.000Z", content_hash: VALID_EVIDENCE_HASH },
     });
     const html = renderCaseHtml(
       buildCaseViewModel(completeFeed([completeEvents[0]!, staleEvidence])),

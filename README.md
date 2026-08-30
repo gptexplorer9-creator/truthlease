@@ -49,11 +49,13 @@ npm run dev
 
 The MCP endpoint is `http://127.0.0.1:8787/mcp`; health is `http://127.0.0.1:8787/healthz`.
 
-## Hosted preview boundary
+## Hosted product boundary
 
-The Vercel deployment is a read-only presentation surface. It serves the case-file UI and a health endpoint, but it deliberately disables `/mcp` and returns a fail-closed response for the event feed. TrueForge, Bright Data, the approval pause, retailer mutation, and persisted-state verification remain in the local operational run where the genuine TrueForge session and durable owned state exist.
+The Vercel application is the same-origin product host for the case index, append-only operational case files, and the Neon-backed case/run/event ledger. `GET /api/cases` and `GET /api/cases/:caseId/events` are read surfaces. The browser has no approval or retailer-mutation endpoint, and hosted `/mcp` remains disabled.
 
-Do not cite the hosted preview as evidence of a qualifying approval, mutation, or verification run.
+A local outbound operator connector reads one genuine TrueForge session through its loopback API and sends authenticated append-only event batches to `POST /api/connectors/:connectorId/events`. TrueForge still owns native approval; the local TruthLease MCP owns the one atomic retailer mutation. The hosted UI only renders the resulting evidence, approval, patch receipt, and fresh persisted-state re-read. An empty hosted case index means no genuine run has been ingested; the product never inserts a synthetic demo case.
+
+Do not cite a deployed shell, an empty ledger, or a fixture as evidence of a qualifying approval, mutation, or verification run.
 
 Start the pinned TrueForge local runtime in a second terminal:
 
@@ -69,7 +71,8 @@ Open `http://127.0.0.1:8790`, then:
 4. Create the agent using [`config/trueforge-agent-manifest.json`](config/trueforge-agent-manifest.json) through the TrueForge API.
 5. Ask it to run the configured TL-042 case.
 6. Do not approve until TrueForge shows the exact `apply_containment_patch` snake_case arguments.
-7. Bind the resulting session to the read-only UI with `TRUTHLEASE_TRUEFORGE_SESSION_ID`.
+7. Set `TRUTHLEASE_TRUEFORGE_SESSION_ID`, `TRUTHLEASE_RUN_ID`, `TRUTHLEASE_BASE_URL`, and the ignored connector token, then run `npm run connector:run`.
+8. Confirm the hosted case file shows the ordered Evidence -> Proof -> Approval -> Patch -> Verified record. Verification is a fresh persisted-state re-read, not independent verification.
 
 Reset the owned retailer between demos with `npm run state:reset`.
 

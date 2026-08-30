@@ -1,9 +1,17 @@
 import type { JsonObject, JsonValue, RunEvent, RunEventType } from "./case-events.js";
+import type { FeedProvenance } from "./runtime-state.js";
+import { classifyFeedProvenance } from "./runtime-state.js";
 
 export const CASE_STAGE_KEYS = ["evidence", "proof", "approval", "patch", "verified"] as const;
 
+export const EXPECTED_CPSC_AUTHORITY = "U.S. Consumer Product Safety Commission";
+export const EXPECTED_BRIGHT_DATA_TRANSPORT = "Bright Data Web MCP";
+export const EXPECTED_CPSC_SOURCE_URL =
+  "https://www.cpsc.gov/Recalls/2026/HABA-USA-Recalls-Rainbow-Rattle-Grasping-and-Teething-Toys-Due-to-Risk-of-Serious-Injury-or-Death-from-Choking-and-Ingestion-Hazards";
+
 export type CaseStageKey = (typeof CASE_STAGE_KEYS)[number];
 export type CaseStageStatus = "waiting" | "active" | "complete" | "failed" | "denied" | "stale";
+export type CaseStageNotes = Record<CaseStageKey, string | undefined>;
 
 export interface CaseStageView {
   key: CaseStageKey;
@@ -16,6 +24,7 @@ export interface CaseViewModel {
   caseId: string;
   runId: string;
   feedStatus: string;
+  provenance: FeedProvenance;
   lastSequence: number;
   events: readonly RunEvent[];
   snapshot?: RunEvent<"state.snapshot">;
@@ -30,6 +39,7 @@ export interface CaseViewModel {
   verification?: RunEvent<"verification.completed">;
   verificationFailure?: RunEvent<"verification.failed">;
   stages: readonly CaseStageView[];
+  stageNotes: CaseStageNotes;
   contractWarnings: readonly string[];
 }
 
@@ -58,6 +68,82 @@ function normalizedDecision(event?: RunEvent<"approval.resolved">): string | und
   return decision?.toLowerCase();
 }
 
+function addWarning(warnings: string[], message: string): void {
+  if (!warnings.includes(message)) {
+    warnings.push(message);
+  }
+}
+
+function setStageNote(notes: CaseStageNotes, key: CaseStageKey, message: string): void {
+  if (notes[key] === undefined) {
+    notes[key] = message;
+  }
+}
+
+function hasIdentityStatus(object: JsonObject | undefined, idKeys: readonly string[]): boolean {
+  const id = firstString(object, ...idKeys);
+  const status = firstString(object, "status", "publication_status", "publicationStatus");
+  return id !== undefined && status !== undefined;
+}
+
+function analysisHasContract(event: RunEvent<"analysis.completed"> | undefined): boolean {
+  const payload = event?.payload;
+  const rule = objectValue(payload, "rule") ?? objectValue(payload, "match_rule") ?? payload;
+  const exact = objectValue(payload, "exact_match") ?? objectValue(payload, "exactMatch");
+  return (
+    firstString(rule, "item_number", "itemNumber") !== undefined &&
+    firstString(rule, "batch_code", "batchCode") !== undefined &&
+    firstString(exact, "listing_id", "listingId", "id") !== undefined &&
+    firstString(exact, "item_number", "itemNumber") !== undefined &&
+    firstString(exact, "batch_code", "batchCode") !== undefined
+  );
+}
+
+function patchHasContract(event: RunEvent<"patch.applied"> | undefined): boolean {
+  if (!event) return false;
+  return (
+    firstString(event.payload, "patch_id", "patchId") !== undefined &&
+    hasIdentityStatus(objectValue(event.payload, "lease"), ["lease_id", "leaseId", "id"]) &&
+    hasIdentityStatus(objectValue(event.payload, "listing"), ["listing_id", "listingId", "id"])
+  );
+}
+
+function verificationHasContract(event: RunEvent<"verification.completed"> | undefined): boolean {
+  if (!event) return false;
+  return (
+    hasIdentityStatus(objectValue(event.payload, "lease"), ["lease_id", "leaseId", "id"]) &&
+    hasIdentityStatus(objectValue(event.payload, "listing"), ["listing_id", "listingId", "id"])
+  );
+}
+
+export interface EvidenceContractCheck {
+  valid: boolean;
+  problems: readonly string[];
+}
+
+export function checkEvidenceContract(
+  event: RunEvent | undefined,
+): EvidenceContractCheck {
+  if (!event || event.type !== "evidence.fetched") return { valid: false, problems: ["No evidence receipt was supplied."] };
+
+  const source = objectValue(event.payload, "source");
+  const receipt = objectValue(event.payload, "receipt");
+  const authority = firstString(source, "authority");
+  const transport = firstString(source, "transport");
+  const url = firstString(source, "url");
+  const retrievedAt = firstString(receipt, "retrieved_at");
+  const hash = firstString(receipt, "content_hash");
+  const problems: string[] = [];
+
+  if (authority !== EXPECTED_CPSC_AUTHORITY) problems.push("The canonical CPSC authority is missing or different.");
+  if (transport !== EXPECTED_BRIGHT_DATA_TRANSPORT) problems.push("The Bright Data Web MCP transport is missing or different.");
+  if (url !== EXPECTED_CPSC_SOURCE_URL) problems.push("The source URL is not the canonical CPSC recall page.");
+  if (!retrievedAt || Number.isNaN(Date.parse(retrievedAt))) problems.push("The retrieval timestamp is missing or invalid.");
+  if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) problems.push("The content hash must be exactly 64 hexadecimal characters.");
+
+  return { valid: problems.length === 0, problems };
+}
+
 export function buildCaseViewModel(input: {
   caseId: string;
   runId: string;
@@ -84,80 +170,308 @@ export function buildCaseViewModel(input: {
   const decision = normalizedDecision(approvalResolution);
   const approvalDenied = decision === "deny" || decision === "denied" || decision === "rejected";
   const approvalApproved = decision === "approve" || decision === "approved";
-  const verifiedPassed =
-    finalVerificationEvent?.type === "verification.completed" &&
-    booleanValue(finalVerificationEvent.payload, "passed") === true;
   const freshness = objectValue(evidence?.payload, "freshness");
   const evidenceStale =
     booleanValue(evidence?.payload, "stale") === true ||
     booleanValue(freshness, "stale") === true ||
     firstString(evidence?.payload, "freshness_status", "freshnessStatus")?.toLowerCase() === "stale";
+  const evidenceContract = checkEvidenceContract(evidence);
+  const evidenceContractInvalid = evidence !== undefined && !evidenceContract.valid;
+
+  const stageNotes: CaseStageNotes = {
+    evidence: undefined,
+    proof: undefined,
+    approval: undefined,
+    patch: undefined,
+    verified: undefined,
+  };
+  const warnings: string[] = [];
+
+  const evidenceReady =
+    finalEvidenceEvent?.type === "evidence.fetched" && !evidenceStale && evidenceContract.valid;
+  const analysisAfterEvidence = analysis !== undefined && evidence !== undefined && analysis.sequence > evidence.sequence;
+  const proofTrusted =
+    finalAnalysisEvent?.type === "analysis.completed" &&
+    evidenceReady &&
+    analysisAfterEvidence &&
+    analysisHasContract(analysis);
+
+  if (evidenceContractInvalid) {
+    addWarning(warnings, `Evidence receipt rejected: ${evidenceContract.problems.join(" ")}`);
+    setStageNote(
+      stageNotes,
+      "evidence",
+      "The received evidence event does not satisfy the canonical CPSC and Bright Data receipt contract. It is retained in run activity but cannot unlock analysis or approval.",
+    );
+  }
+
+  if (analysis && evidenceContractInvalid) {
+    addWarning(warnings, "Analysis arrived after a malformed evidence receipt.");
+    setStageNote(
+      stageNotes,
+      "proof",
+      "A proof event was received, but the upstream evidence receipt failed the canonical source, transport, timestamp, or hash contract.",
+    );
+  } else if (analysis && evidenceStale) {
+    addWarning(warnings, "Analysis arrived from an evidence receipt marked stale.");
+    setStageNote(
+      stageNotes,
+      "proof",
+      "A proof event was received, but the upstream evidence receipt is stale. TruthLease will not mark proof complete or unlock downstream stages.",
+    );
+  } else if (analysis && !evidence) {
+    addWarning(warnings, "Deterministic proof arrived without a fresh official evidence receipt.");
+    setStageNote(
+      stageNotes,
+      "proof",
+      "A proof event was received before any qualifying official evidence receipt. The raw event remains visible, but TruthLease does not accept it as completed proof.",
+    );
+  } else if (analysis && !analysisAfterEvidence) {
+    addWarning(warnings, "Deterministic proof did not occur after the qualifying evidence receipt.");
+    setStageNote(
+      stageNotes,
+      "proof",
+      "The proof event does not follow the evidence receipt in the causal order, so the UI will not render proof complete.",
+    );
+  } else if (analysis && !analysisHasContract(analysis)) {
+    addWarning(warnings, "Analysis completed without the required exact-match contract data.");
+    setStageNote(
+      stageNotes,
+      "proof",
+      "The proof event is missing the exact-match contract fields needed to prove one listing and its exclusions.",
+    );
+  }
+
+  const approvalRequestNative = stringValue(approvalRequest?.payload, "resolutionMode") === "trueforge_native";
+  const approvalRequestAfterProof = approvalRequest !== undefined && analysis !== undefined && approvalRequest.sequence > analysis.sequence;
+  if (approvalResolution && !approvalRequest) {
+    addWarning(warnings, "Approval resolution arrived without a preceding approval request.");
+    setStageNote(
+      stageNotes,
+      "approval",
+      "A resolution was received without a valid pending approval request. The UI keeps the approval stage incomplete.",
+    );
+  }
+  if (approvalRequest && stringValue(approvalRequest.payload, "resolutionMode") !== "trueforge_native") {
+    addWarning(warnings, "The approval request does not declare the required trueforge_native resolution mode.");
+    setStageNote(
+      stageNotes,
+      "approval",
+      "The approval request does not declare the native TrueForge resolution mode required by this shell.",
+    );
+  }
+  if (approvalRequest && !proofTrusted) {
+    addWarning(warnings, "Approval request arrived before trusted deterministic proof completed.");
+    setStageNote(
+      stageNotes,
+      "approval",
+      "An approval request was received, but upstream proof is not trustworthy enough to unlock human approval in this UI.",
+    );
+  } else if (approvalRequest && !approvalRequestAfterProof) {
+    addWarning(warnings, "Approval request did not occur after deterministic proof.");
+    setStageNote(
+      stageNotes,
+      "approval",
+      "The approval request does not follow deterministic proof in the event order, so the stage cannot render active authority.",
+    );
+  }
+
+  const approvalResolutionAfterRequest =
+    approvalResolution !== undefined &&
+    approvalRequest !== undefined &&
+    approvalResolution.sequence > approvalRequest.sequence;
+  if (approvalResolution && approvalRequest && !approvalResolutionAfterRequest) {
+    addWarning(warnings, "Approval resolution did not occur after the approval request.");
+    setStageNote(
+      stageNotes,
+      "approval",
+      "The approval resolution is out of order relative to the request. TruthLease will not treat it as authoritative completion.",
+    );
+  }
+
+  const approvalRequestTrusted = !!approvalRequest && approvalRequestNative && proofTrusted && approvalRequestAfterProof;
+  const approvalResolutionTrusted =
+    !!approvalResolution && approvalRequestTrusted && approvalResolutionAfterRequest;
+  const approvalDeniedTrusted = approvalResolutionTrusted && approvalDenied;
+  const approvalApprovedTrusted = approvalResolutionTrusted && approvalApproved;
+
+  const patchAfterApproval = patch !== undefined && approvalResolution !== undefined && patch.sequence > approvalResolution.sequence;
+  const patchFailureAfterApproval =
+    patchFailure !== undefined && approvalResolution !== undefined && patchFailure.sequence > approvalResolution.sequence;
+  const trustedPatchReceipt =
+    finalPatchEvent?.type === "patch.applied" &&
+    approvalApprovedTrusted &&
+    patchAfterApproval &&
+    patchHasContract(patch);
+  const trustedPatchFailure =
+    finalPatchEvent?.type === "patch.failed" && approvalApprovedTrusted && patchFailureAfterApproval;
+
+  if (patch && !approvalApprovedTrusted) {
+    addWarning(warnings, "A patch receipt arrived without an explicit approved TrueForge resolution.");
+    setStageNote(
+      stageNotes,
+      "patch",
+      "A patch receipt was received without a trustworthy approved TrueForge resolution. The UI shows the event but not a completed mutation.",
+    );
+  } else if (patch && !patchAfterApproval) {
+    addWarning(warnings, "Patch receipt did not occur after the approved TrueForge resolution.");
+    setStageNote(
+      stageNotes,
+      "patch",
+      "The patch receipt is out of causal order relative to approval, so mutation completion is withheld.",
+    );
+  } else if (patch && !patchHasContract(patch)) {
+    addWarning(warnings, "Patch receipt is missing the persisted mutation contract fields.");
+    setStageNote(
+      stageNotes,
+      "patch",
+      "The patch receipt is missing the minimum persisted mutation fields required to render the patch stage complete.",
+    );
+  }
+
+  if (patchFailure && !approvalApprovedTrusted) {
+    addWarning(warnings, "Patch failure arrived without an explicit approved TrueForge resolution.");
+    setStageNote(
+      stageNotes,
+      "patch",
+      "A patch failure event was received without a trustworthy approved TrueForge resolution, so the patch stage stays incomplete.",
+    );
+  } else if (patchFailure && !patchFailureAfterApproval) {
+    addWarning(warnings, "Patch failure did not occur after the approved TrueForge resolution.");
+    setStageNote(
+      stageNotes,
+      "patch",
+      "The patch failure event is out of order relative to approval, so the UI refuses to treat it as the stage terminal event.",
+    );
+  }
+
+  const verificationAfterPatch = verification !== undefined && patch !== undefined && verification.sequence > patch.sequence;
+  const verificationFailureAfterPatch =
+    verificationFailure !== undefined &&
+    patch !== undefined &&
+    verificationFailure.sequence > patch.sequence;
+  const verificationPassed =
+    finalVerificationEvent?.type === "verification.completed" &&
+    booleanValue(finalVerificationEvent.payload, "passed") === true;
+  const trustedVerification =
+    finalVerificationEvent?.type === "verification.completed" &&
+    trustedPatchReceipt &&
+    verificationAfterPatch &&
+    verificationPassed &&
+    verificationHasContract(verification);
+  const trustedVerificationFailure =
+    finalVerificationEvent?.type === "verification.failed" &&
+    trustedPatchReceipt &&
+    verificationFailureAfterPatch;
+  const trustedVerificationMiss =
+    finalVerificationEvent?.type === "verification.completed" &&
+    trustedPatchReceipt &&
+    verificationAfterPatch &&
+    !verificationPassed;
+
+  if ((verification || verificationFailure) && !patch) {
+    addWarning(warnings, "A verification event arrived without a preceding applied patch receipt.");
+    setStageNote(
+      stageNotes,
+      "verified",
+      "A verification event was received before any applied patch receipt. TruthLease will not render a verified result.",
+    );
+  } else if (verification && !trustedPatchReceipt) {
+    addWarning(warnings, "Verification arrived before a trustworthy applied patch receipt.");
+    setStageNote(
+      stageNotes,
+      "verified",
+      "A verification event was received, but the mutation receipt is not trustworthy enough to support a green verified state.",
+    );
+  } else if (verification && !verificationAfterPatch) {
+    addWarning(warnings, "Verification did not occur after the applied patch receipt.");
+    setStageNote(
+      stageNotes,
+      "verified",
+      "The verification event is out of order relative to the applied patch receipt, so the UI will not render a verified completion.",
+    );
+  } else if (verification && verificationPassed && !verificationHasContract(verification)) {
+    addWarning(warnings, "Verification completed without the persisted lease/listing evidence required for a green verdict.");
+    setStageNote(
+      stageNotes,
+      "verified",
+      "The verification event reports success but omits the persisted lease/listing evidence required for a green verified state.",
+    );
+  }
+
+  if (verificationFailure && patch && !trustedPatchReceipt) {
+    addWarning(warnings, "Verification failure arrived before a trustworthy applied patch receipt.");
+    setStageNote(
+      stageNotes,
+      "verified",
+      "A verification failure event was received before the applied patch receipt became trustworthy, so the verified stage stays incomplete.",
+    );
+  } else if (verificationFailure && patch && !verificationFailureAfterPatch) {
+    addWarning(warnings, "Verification failure did not occur after the applied patch receipt.");
+    setStageNote(
+      stageNotes,
+      "verified",
+      "The verification failure event is out of order relative to the patch receipt, so it cannot close the verified stage.",
+    );
+  }
 
   const evidenceStatus: CaseStageStatus =
     finalEvidenceEvent?.type === "evidence.failed"
       ? "failed"
       : finalEvidenceEvent?.type === "evidence.fetched"
-        ? evidenceStale
-          ? "stale"
-          : "complete"
+        ? evidenceContractInvalid
+          ? "failed"
+          : evidenceStale
+            ? "stale"
+            : "complete"
         : "active";
   const proofStatus: CaseStageStatus =
-    finalAnalysisEvent?.type === "analysis.failed"
+    finalAnalysisEvent?.type === "analysis.failed" && evidenceReady
       ? "failed"
-      : finalAnalysisEvent?.type === "analysis.completed"
+      : proofTrusted
         ? "complete"
-        : evidenceStatus === "complete"
-          ? "active"
-          : "waiting";
-  const approvalStatus: CaseStageStatus = approvalDenied
+        : analysis && !proofTrusted
+          ? "waiting"
+          : evidenceReady
+            ? "active"
+            : "waiting";
+  const approvalStatus: CaseStageStatus = approvalDeniedTrusted
     ? "denied"
-    : approvalApproved
+    : approvalApprovedTrusted
       ? "complete"
-      : approvalRequest
+      : approvalRequestTrusted
         ? "active"
-        : proofStatus === "complete"
-          ? "active"
-          : "waiting";
+        : approvalRequest || approvalResolution
+          ? "waiting"
+          : proofTrusted
+            ? "active"
+            : "waiting";
   const patchStatus: CaseStageStatus =
-    finalPatchEvent?.type === "patch.failed"
+    trustedPatchFailure
       ? "failed"
-      : finalPatchEvent?.type === "patch.applied"
+      : trustedPatchReceipt
         ? "complete"
-        : approvalApproved
-          ? "active"
-          : "waiting";
+        : patch || patchFailure
+          ? "waiting"
+          : approvalApprovedTrusted
+            ? "active"
+            : "waiting";
   const verifiedStatus: CaseStageStatus =
-    finalVerificationEvent?.type === "verification.failed"
+    trustedVerificationFailure || trustedVerificationMiss
       ? "failed"
-      : finalVerificationEvent?.type === "verification.completed"
-        ? verifiedPassed
-          ? "complete"
-          : "failed"
-        : patchStatus === "complete"
-          ? "active"
-          : "waiting";
-
-  const warnings: string[] = [];
-  if (approvalResolution && !approvalRequest) {
-    warnings.push("Approval resolution arrived without a preceding approval request.");
-  }
-  if (patch && !approvalApproved) {
-    warnings.push("A patch receipt arrived without an explicit approved TrueForge resolution.");
-  }
-  if ((verification || verificationFailure) && !patch) {
-    warnings.push("A verification event arrived without a preceding applied patch receipt.");
-  }
-  if (approvalRequest && stringValue(approvalRequest.payload, "resolutionMode") !== "trueforge_native") {
-    warnings.push("The approval request does not declare the required trueforge_native resolution mode.");
-  }
-  if (evidenceStale && analysis) {
-    warnings.push("Analysis arrived from an evidence receipt marked stale.");
-  }
+      : trustedVerification
+        ? "complete"
+        : verification || verificationFailure
+          ? "waiting"
+          : trustedPatchReceipt
+            ? "active"
+            : "waiting";
 
   return {
     caseId: input.caseId,
     runId: input.runId,
     feedStatus: input.status,
+    provenance: classifyFeedProvenance(input.status),
     lastSequence: input.lastSequence,
     events: input.events,
     snapshot,
@@ -183,6 +497,7 @@ export function buildCaseViewModel(input: {
       { key: "patch", label: "Patch", status: patchStatus, event: finalPatchEvent },
       { key: "verified", label: "Verified", status: verifiedStatus, event: finalVerificationEvent },
     ],
+    stageNotes,
     contractWarnings: warnings,
   };
 }

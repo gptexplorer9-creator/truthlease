@@ -5,6 +5,17 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 
 import { publicState, RetailerStore } from "../infra/store.js";
+import {
+  authenticateConnectorIngestion,
+  LedgerError,
+  type AppendLedgerEventInput,
+  type ConnectorAuthenticatorConfig,
+  type CreateLedgerCaseInput,
+  type LedgerJson,
+  type StartLedgerRunInput,
+  type TruthLeaseLedger,
+} from "../ledger/index.js";
+import { canonicalJson } from "../ledger/canonical.js";
 import { buildCaseEventFeed, fetchTrueForgeEvents } from "../trueforge/case-feed.js";
 import {
   RejectingTrustGate,
@@ -209,6 +220,176 @@ export interface AppOptions {
   trueForgeSessionId?: string;
   hostedReadOnly?: boolean;
   trustGate?: TruthLeaseMcpTrustGate;
+  ledger?: TruthLeaseLedger;
+  connectorAuth?: ConnectorAuthenticatorConfig;
+}
+
+type RequestWithRawBody = Request & { rawBody?: string };
+
+const SUPPORTED_EVENT_TYPES = new Set([
+  "state.snapshot", "evidence.fetched", "evidence.failed", "analysis.completed", "analysis.failed",
+  "approval.required", "approval.resolved", "patch.applied", "patch.failed",
+  "verification.completed", "verification.failed",
+]);
+const LEDGER_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
+const LEDGER_IDEMPOTENCY_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+const MAX_CONNECTOR_EVENTS = 100;
+
+interface ValidatedConnectorBatch {
+  readonly caseInput: CreateLedgerCaseInput;
+  readonly runInput: StartLedgerRunInput;
+  readonly eventInputs: readonly AppendLedgerEventInput[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requiredString(record: Record<string, unknown>, field: string): string {
+  const value = record[field];
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new LedgerError("invalid_input", `${field} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function ledgerIdentifier(record: Record<string, unknown>, field: string): string {
+  const value = requiredString(record, field);
+  if (!LEDGER_IDENTIFIER.test(value)) {
+    throw new LedgerError("invalid_input", `${field} must be 1-160 URL-safe identifier characters.`);
+  }
+  return value;
+}
+
+function idempotencyKey(record: Record<string, unknown>): string {
+  const value = requiredString(record, "idempotencyKey");
+  if (!LEDGER_IDEMPOTENCY_KEY.test(value)) {
+    throw new LedgerError("invalid_input", "idempotencyKey must be 1-200 URL-safe identifier characters.");
+  }
+  return value;
+}
+
+function boundedLabel(record: Record<string, unknown>, field: string): string {
+  const value = requiredString(record, field);
+  if (value.length > 128) {
+    throw new LedgerError("invalid_input", `${field} must be between 1 and 128 characters.`);
+  }
+  return value;
+}
+
+/** Validate and detach the complete batch before the first ledger mutation. */
+function validateConnectorBatch(
+  body: unknown,
+  pathConnectorId: string,
+): ValidatedConnectorBatch {
+  if (!LEDGER_IDENTIFIER.test(pathConnectorId)) {
+    throw new LedgerError("invalid_input", "connectorId must be 1-160 URL-safe identifier characters.");
+  }
+  if (!isRecord(body)) throw new LedgerError("invalid_input", "Connector batch must be a JSON object.");
+
+  const rawCase = body.case;
+  const rawRun = body.run;
+  const rawEvents = body.events;
+  if (!isRecord(rawCase) || !isRecord(rawRun) || !Array.isArray(rawEvents) || rawEvents.length === 0) {
+    throw new LedgerError("invalid_input", "Connector batch requires case, run, and at least one event.");
+  }
+  if (rawEvents.length > MAX_CONNECTOR_EVENTS) {
+    throw new LedgerError("invalid_input", `Connector batch cannot exceed ${MAX_CONNECTOR_EVENTS} events.`);
+  }
+
+  const caseId = ledgerIdentifier(rawCase, "caseId");
+  const runId = ledgerIdentifier(rawRun, "runId");
+  const runCaseId = ledgerIdentifier(rawRun, "caseId");
+  const runConnectorId = ledgerIdentifier(rawRun, "connectorId");
+  if (runCaseId !== caseId) throw new LedgerError("invalid_input", "Run caseId must match the batch caseId.");
+  if (runConnectorId !== pathConnectorId) throw new LedgerError("authentication_failed", "Connector identity mismatch.");
+
+  const subject = rawCase.subject;
+  if (!isRecord(subject)) throw new LedgerError("invalid_input", "Case subject must be a JSON object.");
+  canonicalJson(subject);
+  const caseInput: CreateLedgerCaseInput = {
+    caseId,
+    idempotencyKey: idempotencyKey(rawCase),
+    caseType: boundedLabel(rawCase, "caseType"),
+    subject: subject as LedgerJson,
+  };
+  const runInput: StartLedgerRunInput = {
+    runId,
+    caseId: runCaseId,
+    idempotencyKey: idempotencyKey(rawRun),
+    connectorId: runConnectorId,
+  };
+
+  let previousSequence: number | undefined;
+  const eventInputs = rawEvents.map((rawEvent, index): AppendLedgerEventInput => {
+    if (!isRecord(rawEvent)) throw new LedgerError("invalid_input", "Every connector event must be a JSON object.");
+    const eventType = boundedLabel(rawEvent, "eventType");
+    if (!SUPPORTED_EVENT_TYPES.has(eventType)) {
+      throw new LedgerError("invalid_input", `Unsupported event type ${eventType}.`);
+    }
+    const eventCaseId = ledgerIdentifier(rawEvent, "caseId");
+    const eventRunId = ledgerIdentifier(rawEvent, "runId");
+    const eventConnectorId = ledgerIdentifier(rawEvent, "connectorId");
+    if (eventCaseId !== caseId) {
+      throw new LedgerError("invalid_input", `Event ${index + 1} caseId must match the batch caseId.`);
+    }
+    if (eventRunId !== runId) {
+      throw new LedgerError("invalid_input", `Event ${index + 1} runId must match the batch runId.`);
+    }
+    if (eventConnectorId !== pathConnectorId) {
+      throw new LedgerError("authentication_failed", "Connector identity mismatch.");
+    }
+    const sequence = rawEvent.sequence;
+    if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 1) {
+      throw new LedgerError("invalid_input", "sequence must be a positive safe integer.");
+    }
+    if (previousSequence !== undefined && sequence !== previousSequence + 1) {
+      throw new LedgerError("invalid_input", "Connector event sequences must be contiguous and ordered.");
+    }
+    previousSequence = sequence;
+    const payload = rawEvent.payload;
+    if (!isRecord(payload)) throw new LedgerError("invalid_input", "Every connector event payload must be a JSON object.");
+    canonicalJson(payload);
+    return {
+      eventId: ledgerIdentifier(rawEvent, "eventId"),
+      caseId: eventCaseId,
+      runId: eventRunId,
+      sequence,
+      idempotencyKey: idempotencyKey(rawEvent),
+      connectorId: eventConnectorId,
+      eventType,
+      payload: payload as LedgerJson,
+    };
+  });
+
+  return { caseInput, runInput, eventInputs };
+}
+
+function ledgerStatus(error: LedgerError): number {
+  switch (error.code) {
+    case "authentication_failed": return 401;
+    case "not_found": return 404;
+    case "conflict":
+    case "sequence_conflict": return 409;
+    case "invalid_input": return 400;
+  }
+}
+
+function feedStatus(eventType: string | undefined): string {
+  switch (eventType) {
+    case "verification.completed": return "verified";
+    case "verification.failed": return "verification_failed";
+    case "patch.applied": return "patch_applied";
+    case "patch.failed": return "mutation_failed";
+    case "approval.required": return "approval_pending";
+    case "approval.resolved": return "approval_resolved";
+    case "analysis.completed": return "proof_complete";
+    case "analysis.failed": return "analysis_failed";
+    case "evidence.fetched": return "evidence_fetched";
+    case "evidence.failed": return "evidence_failed";
+    case "state.snapshot": return "case_open";
+    default: return "awaiting_events";
+  }
 }
 
 export function createApp(store: RetailerStore, options: AppOptions = {}) {
@@ -217,13 +398,19 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
   const trueForgeBaseUrl = options.trueForgeBaseUrl ?? process.env.TRUTHLEASE_TRUEFORGE_URL ?? "http://127.0.0.1:8790";
   const trueForgeSessionId = options.trueForgeSessionId ?? process.env.TRUTHLEASE_TRUEFORGE_SESSION_ID;
   const hostedReadOnly = options.hostedReadOnly ?? false;
+  const ledger = options.ledger;
   const trustGate = options.trustGate ?? (
     trueForgeSessionId === undefined || trueForgeSessionId.trim().length === 0
       ? new RejectingTrustGate()
       : new TrueForgeSessionTrustGate(trueForgeBaseUrl, trueForgeSessionId)
   );
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({
+    limit: "1mb",
+    verify: (request, _response, buffer) => {
+      (request as RequestWithRawBody).rawBody = buffer.toString("utf8");
+    },
+  }));
   app.use((request, response, next) => {
     response.set({
       "Content-Security-Policy": [
@@ -258,12 +445,76 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
       status: "ok",
       service: "truthlease",
       version: "0.1.0",
-      mode: hostedReadOnly ? "hosted_read_only" : "local_operational",
+      mode: hostedReadOnly ? (ledger ? "hosted_ledger" : "hosted_read_only") : "local_operational",
+      ledger: ledger ? "configured" : "unconfigured",
     });
+  });
+
+  app.get("/api/cases", async (request, response) => {
+    if (!ledger) {
+      response.status(503).json({ error: "The production case ledger is not configured." });
+      return;
+    }
+    const rawLimit = request.query.limit;
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    const cursor = typeof request.query.cursor === "string" ? request.query.cursor : undefined;
+    try {
+      response.json(await ledger.listCases({ ...(limit === undefined ? {} : { limit }), ...(cursor ? { cursor } : {}) }));
+    } catch (error) {
+      if (error instanceof LedgerError) {
+        response.status(ledgerStatus(error)).json({ error: error.message, code: error.code });
+        return;
+      }
+      response.status(500).json({ error: "Failed to read the production case ledger." });
+    }
   });
 
   app.get("/api/cases/:leaseId/events", async (request, response) => {
     const leaseId = request.params.leaseId;
+    const rawAfter = request.query.after;
+    const after = rawAfter === undefined ? undefined : Number(rawAfter);
+    if (after !== undefined && (!Number.isSafeInteger(after) || after < 0)) {
+      response.status(400).json({ error: "after must be a non-negative safe integer." });
+      return;
+    }
+
+    if (ledger) {
+      try {
+        const detail = await ledger.readCase(leaseId);
+        const run = detail.runs.at(-1);
+        if (!run) {
+          response.status(409).json({ error: `Case ${leaseId} has no operational run yet.` });
+          return;
+        }
+        const allEvents = detail.events
+          .filter((event) => event.runId === run.runId)
+          .sort((left, right) => left.sequence - right.sequence);
+        const events = allEvents
+          .filter((event) => after === undefined || event.sequence > after)
+          .map((event) => ({
+            type: event.eventType,
+            id: event.eventId,
+            timestamp: event.receivedAt,
+            runId: event.runId,
+            sequence: event.sequence,
+            payload: event.payload,
+          }));
+        response.json({
+          caseId: detail.case.caseId,
+          runId: run.runId,
+          status: feedStatus(allEvents.at(-1)?.eventType),
+          lastSequence: allEvents.at(-1)?.sequence ?? 0,
+          events,
+        });
+      } catch (error) {
+        if (error instanceof LedgerError) {
+          response.status(ledgerStatus(error)).json({ error: error.message, code: error.code });
+          return;
+        }
+        response.status(500).json({ error: "Failed to read the production case ledger." });
+      }
+      return;
+    }
     if (leaseId !== "TL-042") {
       response.status(404).json({ error: `Unknown TruthLease case ${leaseId}.` });
       return;
@@ -271,7 +522,7 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
     if (hostedReadOnly) {
       response.status(503).json({
         error:
-          "Hosted preview is read-only. Run TruthLease locally with a genuine TrueForge session for operational events.",
+          "The hosted product is read-only. Run TruthLease locally with a genuine TrueForge session for operational events.",
       });
       return;
     }
@@ -281,12 +532,7 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
       });
       return;
     }
-    const rawAfter = request.query.after;
-    const after = rawAfter === undefined ? undefined : Number(rawAfter);
-    if (after !== undefined && (!Number.isSafeInteger(after) || after < 0)) {
-      response.status(400).json({ error: "after must be a non-negative safe integer." });
-      return;
-    }
+
     try {
       const events = await fetchTrueForgeEvents(trueForgeBaseUrl, trueForgeSessionId);
       response.json(buildCaseEventFeed(leaseId, trueForgeSessionId, events, after));
@@ -297,10 +543,50 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
     }
   });
 
+  app.post("/api/connectors/:connectorId/events", async (request: RequestWithRawBody, response) => {
+    if (!ledger || !options.connectorAuth) {
+      response.status(503).json({ error: "Authenticated connector ingestion is not configured." });
+      return;
+    }
+    try {
+      const rawConnectorId = request.params.connectorId;
+      if (typeof rawConnectorId !== "string" || rawConnectorId.trim() === "") {
+        throw new LedgerError("invalid_input", "connectorId path parameter is required.");
+      }
+      const connectorId = rawConnectorId;
+      const authorization = request.header("authorization");
+      const timestamp = request.header("x-truthlease-timestamp");
+      const signature = request.header("x-truthlease-signature");
+      const presented = authorization?.startsWith("Bearer ")
+        ? { kind: "bearer" as const, token: authorization.slice("Bearer ".length) }
+        : timestamp && signature
+          ? { kind: "hmac-sha256" as const, timestamp, signature }
+          : { kind: "bearer" as const, token: "" };
+      const verified = authenticateConnectorIngestion(options.connectorAuth, connectorId, request.rawBody ?? "", presented);
+      const batch = validateConnectorBatch(request.body, connectorId);
+      const caseResult = await ledger.createCase(batch.caseInput);
+      const runResult = await ledger.startRun(batch.runInput);
+      let cursor: { eventId: string; sequence: number } | null = null;
+      let allReplayed = caseResult.idempotentReplay && runResult.idempotentReplay;
+      for (const eventInput of batch.eventInputs) {
+        const result = await ledger.appendAuthenticatedEvent(verified, eventInput);
+        cursor = { eventId: result.value.eventId, sequence: result.value.sequence };
+        allReplayed = allReplayed && result.idempotentReplay;
+      }
+      response.status(allReplayed ? 200 : 202).json({ accepted: true, cursor, idempotentReplay: allReplayed });
+    } catch (error) {
+      if (error instanceof LedgerError) {
+        response.status(ledgerStatus(error)).json({ error: error.message, code: error.code });
+        return;
+      }
+      response.status(500).json({ error: "Connector ingestion failed closed." });
+    }
+  });
+
   app.post("/mcp", async (request: Request, response: Response) => {
     if (hostedReadOnly) {
       response.status(503).json({
-        error: "The MCP and retailer mutation surface are disabled in the hosted preview.",
+        error: "The MCP and retailer mutation surface are disabled in the hosted product.",
       });
       return;
     }
@@ -317,7 +603,11 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
 
     try {
       await server.connect(transport);
-      await transport.handleRequest(request, response, request.body);
+      await transport.handleRequest(
+        request as unknown as Parameters<typeof transport.handleRequest>[0],
+        response as unknown as Parameters<typeof transport.handleRequest>[1],
+        request.body,
+      );
     } catch (error) {
       if (!response.headersSent) {
         response.status(500).json({
@@ -329,14 +619,14 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
 
   app.get("/mcp", (_request, response) => {
     if (hostedReadOnly) {
-      response.status(503).json({ error: "The MCP surface is disabled in the hosted preview." });
+      response.status(503).json({ error: "The MCP surface is disabled in the hosted product." });
       return;
     }
     response.status(405).set("Allow", "POST").json({ error: "Use POST for stateless MCP." });
   });
   app.delete("/mcp", (_request, response) => {
     if (hostedReadOnly) {
-      response.status(503).json({ error: "The MCP surface is disabled in the hosted preview." });
+      response.status(503).json({ error: "The MCP surface is disabled in the hosted product." });
       return;
     }
     response.status(405).set("Allow", "POST").json({ error: "Use POST for stateless MCP." });

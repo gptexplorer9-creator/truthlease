@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildCaseViewModel } from "../src/ui/case-model.js";
-import { completeEvents, completeFeed, fixtureEvent } from "./ui-fixtures.js";
+import { completeEvents, completeFeed, fixtureEvent, VALID_EVIDENCE_HASH, VALID_EVIDENCE_SOURCE } from "./ui-fixtures.js";
 
 describe("deterministic case state", () => {
   it("keeps every completed stage visible after verification", () => {
@@ -57,8 +57,8 @@ describe("deterministic case state", () => {
     const staleEvidence = fixtureEvent(2, "evidence.fetched", {
       stale: true,
       title: "Old CPSC receipt",
-      source: { transport: "Bright Data", url: "https://www.cpsc.gov/Recalls/example" },
-      receipt: { retrieved_at: "2026-01-01T00:00:00.000Z", content_hash: "sha256:old" },
+      source: VALID_EVIDENCE_SOURCE,
+      receipt: { retrieved_at: "2026-01-01T00:00:00.000Z", content_hash: VALID_EVIDENCE_HASH },
     });
     const model = buildCaseViewModel(completeFeed([completeEvents[0]!, staleEvidence]));
 

@@ -2,13 +2,14 @@
 
 ## Design brief
 
-Designing one append-only operational case file for a technical hackathon judge on the web.
+Designing one append-only operational case file for retailer operations, trust, and reliability teams on the web.
 
-- Goal: understand and safely operate one evidence-to-verification containment run in under three minutes.
+- Goal: understand and safely follow one evidence-to-verification containment run in under three minutes, including when no case has been recorded yet.
 - Tone: quiet, exact, operational, and human-controlled.
 - Main risk: a polished interface could accidentally imply fabricated evidence, simulated approval, or verified containment before the fresh read exists.
 - Must remember: completed stages remain visible; the approval stage is an interruption in the causal record, not a conversational prompt.
 - Constraints: deterministic rendering, keyboard access, reduced motion, no direct retailer mutation from the browser, no generic dashboard, no metrics or unrelated product surface.
+- Product shell: a complete, calm workspace must exist before the first case. An empty ledger is a ready operational state, never a fabricated case or transport error.
 
 ## Reference lock
 

@@ -3,6 +3,14 @@ import type { CaseEventFeed, JsonObject, RunEvent, RunEventType } from "../src/u
 const RUN_ID = "run-truthlease-001";
 const BASE_TIME = Date.parse("2026-08-29T20:00:00.000Z");
 
+export const VALID_EVIDENCE_SOURCE = {
+  authority: "U.S. Consumer Product Safety Commission",
+  transport: "Bright Data Web MCP",
+  url: "https://www.cpsc.gov/Recalls/2026/HABA-USA-Recalls-Rainbow-Rattle-Grasping-and-Teething-Toys-Due-to-Risk-of-Serious-Injury-or-Death-from-Choking-and-Ingestion-Hazards",
+} as const;
+
+export const VALID_EVIDENCE_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
 function event<TType extends RunEventType>(
   sequence: number,
   type: TType,
@@ -31,14 +39,10 @@ export const completeEvents: RunEvent[] = [
   event(2, "evidence.fetched", {
     title: "Official recall for Example Infant Lounger",
     summary: "A suffocation hazard was identified for the affected item and batch.",
-    source: {
-      authority: "U.S. Consumer Product Safety Commission",
-      transport: "Bright Data Web MCP",
-      url: "https://www.cpsc.gov/Recalls/example",
-    },
+    source: VALID_EVIDENCE_SOURCE,
     receipt: {
       retrieved_at: "2026-08-29T20:00:02.000Z",
-      content_hash: "sha256:official-evidence-hash",
+      content_hash: VALID_EVIDENCE_HASH,
     },
   }),
   event(3, "analysis.completed", {

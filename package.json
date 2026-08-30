@@ -14,6 +14,8 @@
     "dev": "tsx watch src/server.ts",
     "evidence:direct-dev": "tsx scripts/live-evidence.ts",
     "evidence:verify": "tsx scripts/verify-trueforge-session.ts",
+    "connector:run": "tsx scripts/run-connector.ts",
+    "ledger:migrate": "tsx scripts/migrate-ledger.ts",
     "start": "node dist/src/server.js",
     "state:reset": "tsx scripts/reset-state.ts",
     "test": "vitest run",
@@ -22,6 +24,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
+    "@neondatabase/serverless": "^1.0.2",
     "@types/express": "5.0.6",
     "@types/node": "26.4.0",
     "express": "5.2.1",
