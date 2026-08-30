@@ -6,6 +6,7 @@ import {
   mergeCaseEvents,
   parseCaseEventFeed,
 } from "../src/ui/case-events.js";
+import { loadCaseFeedForPolling } from "../src/ui/browser-app.js";
 import { completeEvents, completeFeed, fixtureEvent } from "./ui-fixtures.js";
 
 describe("case event transport", () => {
@@ -70,6 +71,66 @@ describe("case event transport", () => {
 
     expect(delta.events.map((event) => event.sequence)).toEqual([5, 6, 7]);
     expect(full.events).toHaveLength(7);
+  });
+
+  it("refetches a replacement run from cursor zero before accepting its restarted sequence", async () => {
+    const replacementEvent = {
+      ...completeEvents[0]!,
+      id: "replacement-event-1",
+      runId: "run-replacement",
+      sequence: 1,
+    };
+    const loadCase = vi
+      .fn()
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "verified",
+        lastSequence: 1,
+        events: [],
+      })
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "running",
+        lastSequence: 1,
+        events: [replacementEvent],
+      });
+
+    const feed = await loadCaseFeedForPolling(
+      { loadCase },
+      "TL-042",
+      completeFeed().runId,
+      7,
+    );
+
+    expect(loadCase).toHaveBeenNthCalledWith(1, "TL-042", 7, undefined);
+    expect(loadCase).toHaveBeenNthCalledWith(2, "TL-042", undefined, undefined);
+    expect(feed.events).toEqual([replacementEvent]);
+    expect(feed.lastSequence).toBe(1);
+  });
+
+  it("rejects an incomplete cursor-zero replacement run before its cursor can advance", async () => {
+    const loadCase = vi
+      .fn()
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "verified",
+        lastSequence: 1,
+        events: [],
+      })
+      .mockResolvedValueOnce({
+        caseId: "TL-042",
+        runId: "run-replacement",
+        status: "verified",
+        lastSequence: 1,
+        events: [],
+      });
+
+    await expect(
+      loadCaseFeedForPolling({ loadCase }, "TL-042", completeFeed().runId, 7),
+    ).rejects.toThrow(/complete event history from cursor zero/);
   });
 
   it("merges only newer event IDs and rejects semantic ID reuse", () => {

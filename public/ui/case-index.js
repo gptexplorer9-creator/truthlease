@@ -1,3 +1,4 @@
+const MAX_CASE_INDEX_PAGES = 20;
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -79,26 +80,50 @@ export class HttpCaseIndexSource {
         this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     }
     async loadCases(signal) {
-        const response = await this.#fetch(this.#basePath, {
-            method: "GET",
-            headers: { accept: "application/json" },
-            signal,
-        });
-        if (!response.ok) {
-            let detail;
-            try {
-                const body = (await response.json());
-                if (isRecord(body) && typeof body.error === "string" && body.error.trim() !== "") {
-                    detail = body.error;
+        const cases = [];
+        const caseIds = new Set();
+        const cursors = new Set();
+        let cursor;
+        for (let pageNumber = 0; pageNumber < MAX_CASE_INDEX_PAGES; pageNumber += 1) {
+            const separator = this.#basePath.includes("?") ? "&" : "?";
+            const url = cursor === undefined
+                ? this.#basePath
+                : `${this.#basePath}${separator}cursor=${encodeURIComponent(cursor)}`;
+            const response = await this.#fetch(url, {
+                method: "GET",
+                headers: { accept: "application/json" },
+                signal,
+            });
+            if (!response.ok) {
+                let detail;
+                try {
+                    const body = (await response.json());
+                    if (isRecord(body) && typeof body.error === "string" && body.error.trim() !== "") {
+                        detail = body.error;
+                    }
                 }
+                catch {
+                    // Non-JSON error responses still retain their authoritative HTTP status.
+                }
+                throw new Error(detail === undefined
+                    ? `Case index failed with HTTP ${response.status}.`
+                    : `Case index failed with HTTP ${response.status}: ${detail}`);
             }
-            catch {
-                // Non-JSON error responses still retain their authoritative HTTP status.
+            const page = parseCaseIndexFeed(await response.json());
+            for (const entry of page.cases) {
+                if (caseIds.has(entry.caseId))
+                    continue;
+                caseIds.add(entry.caseId);
+                cases.push(entry);
             }
-            throw new Error(detail === undefined
-                ? `Case index failed with HTTP ${response.status}.`
-                : `Case index failed with HTTP ${response.status}: ${detail}`);
+            if (page.nextCursor === undefined)
+                return { cases };
+            if (cursors.has(page.nextCursor)) {
+                throw new Error("Case index pagination returned a cursor cycle.");
+            }
+            cursors.add(page.nextCursor);
+            cursor = page.nextCursor;
         }
-        return parseCaseIndexFeed(await response.json());
+        throw new Error(`Case index pagination exceeded the ${MAX_CASE_INDEX_PAGES}-page safety limit.`);
     }
 }

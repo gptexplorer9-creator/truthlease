@@ -46,6 +46,18 @@ function terminalMessage(state, detail, delayMs, provenance) {
 function parseQueueEntries(feed) {
     return feed.cases.map((entry) => ({ ...entry }));
 }
+export async function loadCaseFeedForPolling(source, caseId, currentRunId, after, signal) {
+    const feed = await source.loadCase(caseId, after, signal);
+    if (currentRunId === undefined || feed.runId === currentRunId)
+        return feed;
+    const refreshed = await source.loadCase(caseId, undefined, signal);
+    const finalSequence = refreshed.events.at(-1)?.sequence;
+    if ((refreshed.lastSequence === 0 && refreshed.events.length !== 0) ||
+        (refreshed.lastSequence > 0 && finalSequence !== refreshed.lastSequence)) {
+        throw new Error("The replacement run did not return a complete event history from cursor zero.");
+    }
+    return refreshed;
+}
 export function captureRootInteractionState(root) {
     const activeElement = root.ownerDocument.activeElement;
     const focusKey = activeElement && root.contains(activeElement)
@@ -238,7 +250,7 @@ export function createCaseFileApp({ root, connectionTarget, source = new HttpCas
             const previousLastSequence = lastSequence;
             const previousEventCount = events.length;
             const previousStatus = currentModel?.feedStatus;
-            const feed = await source.loadCase(activeCaseId, runId ? lastSequence : undefined, controller.signal);
+            const feed = await loadCaseFeedForPolling(source, activeCaseId, runId, runId ? lastSequence : undefined, controller.signal);
             if (controller.signal.aborted || stopped)
                 return;
             if (runId && feed.runId !== runId) {

@@ -75,4 +75,57 @@ describe("case index transport", () => {
     expect(url).toBe("/api/cases");
     expect(init).toMatchObject({ method: "GET", headers: { accept: "application/json" } });
   });
+
+  it("loads every case-index page and deduplicates repeated case IDs", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        cases: [{ caseId: "TL-001" }, { caseId: "TL-002" }],
+        nextCursor: "cursor-002",
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        cases: [{ caseId: "TL-002" }, { caseId: "TL-003" }],
+        nextCursor: "cursor-003",
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        cases: [{ caseId: "TL-004" }],
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+    const source = new HttpCaseIndexSource({ fetch });
+
+    const feed = await source.loadCases();
+
+    expect(feed.cases.map((entry) => entry.caseId)).toEqual(["TL-001", "TL-002", "TL-003", "TL-004"]);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "/api/cases",
+      "/api/cases?cursor=cursor-002",
+      "/api/cases?cursor=cursor-003",
+    ]);
+    expect(fetch.mock.calls.every(([, init]) => init?.method === "GET")).toBe(true);
+  });
+
+  it("rejects repeated pagination cursors instead of looping", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({
+      cases: [{ caseId: "TL-001" }],
+      nextCursor: "cursor-cycle",
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const source = new HttpCaseIndexSource({ fetch });
+
+    await expect(source.loadCases()).rejects.toThrow(/cursor cycle/);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails closed when pagination exceeds its bounded request budget", async () => {
+    let page = 0;
+    const fetch = vi.fn(async () => {
+      page += 1;
+      return new Response(JSON.stringify({
+        cases: [{ caseId: `TL-${String(page).padStart(3, "0")}` }],
+        nextCursor: `cursor-${page}`,
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const source = new HttpCaseIndexSource({ fetch });
+
+    await expect(source.loadCases()).rejects.toThrow(/20-page safety limit/);
+    expect(fetch).toHaveBeenCalledTimes(20);
+  });
 });
