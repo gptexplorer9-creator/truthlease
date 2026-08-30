@@ -1832,20 +1832,22 @@ h3 {
 }
 /* Console information architecture: behavior inspired by resource-management consoles; TruthLease visual identity. */
 :root {
-  --canvas: #f6f8fa;
+  --canvas: #ffffff;
   --surface: #ffffff;
-  --subtle: #f3f6f8;
-  --ink: #17212b;
-  --carbon: #27313a;
-  --muted: #53606d;
-  --rule: #d8dee4;
-  --rule-strong: #aeb8c2;
-  --brand: #0f5b68;
-  --brand-tint: #e9f4f5;
+  --subtle: #faf8f5;
+  --ink: #1b1b1b;
+  --carbon: #303030;
+  --muted: #6d6d6d;
+  --rule: #e9e9e9;
+  --rule-strong: #cfcfcf;
+  --brand: #088177;
+  --brand-tint: #eff8f6;
+  --verified: #088177;
+  --verified-bg: #eff8f6;
   --focus: #0969da;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --shadow: 0 1px 2px rgb(23 33 43 / 8%);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --shadow: none;
 }
 
 html {
@@ -1971,7 +1973,7 @@ select:focus-visible {
   gap: 0;
   border-right: 1px solid var(--rule);
   border-bottom: 0;
-  background: #f8fafb;
+  background: #faf8f5;
   padding: 14px 10px;
   overflow: auto;
 }
@@ -2724,5 +2726,294 @@ select:focus-visible {
   .lifecycle-list .status {
     grid-column: 2;
     justify-self: start;
+  }
+}
+
+/* Demo-first verified-ledger lock: evidence carries the visual weight. */
+.prior-state {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  align-items: start;
+}
+
+.case-hero,
+.case-hero__heading > div {
+  min-width: 0;
+}
+
+.case-hero__heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 1.5rem;
+}
+
+.case-hero__phase {
+  min-width: 170px;
+  border-left: 2px solid var(--brand);
+  background: var(--brand-tint);
+  padding: 0.65rem 0.8rem;
+}
+
+.case-hero__phase span,
+.case-hero__phase strong {
+  display: block;
+}
+
+.case-hero__phase span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.case-hero__phase strong {
+  margin-top: 0.15rem;
+  font-size: 0.82rem;
+}
+
+.causal-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 1.35rem 0 0;
+  border: 1px solid var(--rule);
+  padding: 0;
+  list-style: none;
+}
+
+.causal-strip li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 0.6rem;
+  min-width: 0;
+  border-right: 1px solid var(--rule);
+  background: var(--subtle);
+  padding: 0.8rem;
+}
+
+.causal-strip li:last-child {
+  border-right: 0;
+}
+
+.causal-strip__number {
+  color: var(--brand);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.causal-strip strong,
+.causal-strip p {
+  display: block;
+}
+
+.causal-strip strong {
+  font-size: 0.78rem;
+}
+
+.causal-strip p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.proof-verdict {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(220px, 1fr) minmax(260px, 1.2fr);
+  align-items: center;
+  margin: -1px 0 1rem;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.proof-verdict > div {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 70px;
+  border-right: 1px solid var(--rule);
+  padding: 0.75rem 1rem;
+}
+
+.proof-verdict__value {
+  color: var(--brand);
+  font-size: 1.45rem;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+}
+
+.proof-verdict strong,
+.proof-verdict small {
+  display: block;
+}
+
+.proof-verdict small,
+.proof-verdict > p {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.proof-verdict > p {
+  margin: 0;
+  padding: 0.75rem 1rem;
+}
+
+.approval-airlock {
+  grid-template-columns: 58px minmax(0, 1fr) minmax(190px, auto);
+  border-width: 1px;
+  border-color: var(--warning);
+  border-radius: 6px;
+  background: var(--warning-bg);
+  padding: 1.25rem;
+}
+
+.approval-airlock__lock {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid var(--warning);
+  border-radius: 50%;
+  color: var(--warning);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.approval-airlock h3 {
+  margin-bottom: 0.35rem;
+  font-size: 1.12rem;
+}
+
+.patch-diff {
+  border-top: 1px solid var(--rule);
+  font-size: 0.8rem;
+}
+
+.patch-diff > div {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(120px, 1fr) minmax(120px, 1fr);
+  gap: 1px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--rule);
+}
+
+.patch-diff > div > * {
+  min-width: 0;
+  background: var(--surface);
+  padding: 0.75rem 1rem;
+  overflow-wrap: anywhere;
+}
+
+.patch-diff__header > span {
+  background: var(--subtle);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.patch-diff code {
+  border: 0;
+  background: var(--surface);
+  color: var(--carbon);
+}
+
+.patch-diff > div:not(.patch-diff__header) > code:last-child {
+  color: var(--verified);
+  font-weight: 700;
+}
+
+.console-nav__link,
+.console-nav__link--sub,
+.button,
+.refresh-button {
+  min-height: 44px;
+}
+
+@media (max-width: 1180px) {
+  .prior-state {
+    grid-template-columns: 1fr;
+  }
+
+  .prior-state .state-facts {
+    width: 100%;
+  }
+}
+
+@media (max-width: 960px) {
+  .causal-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .causal-strip li {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .causal-strip li:last-child {
+    border-bottom: 0;
+  }
+
+  .proof-verdict {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .proof-verdict > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .proof-verdict > p {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--rule);
+  }
+
+  .approval-airlock {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .approval-airlock > :last-child {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .case-hero__heading,
+  .proof-verdict {
+    grid-template-columns: 1fr;
+  }
+
+  .case-hero__phase {
+    width: 100%;
+  }
+
+  .proof-verdict > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .proof-verdict > p {
+    grid-column: auto;
+  }
+
+  .approval-airlock {
+    grid-template-columns: 1fr;
+  }
+
+  .approval-airlock__lock {
+    width: 46px;
+    height: 46px;
+  }
+
+  .approval-airlock > :last-child {
+    grid-column: auto;
+  }
+
+  .patch-diff {
+    overflow-x: auto;
+  }
+
+  .patch-diff > div {
+    min-width: 520px;
   }
 }

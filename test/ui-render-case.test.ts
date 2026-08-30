@@ -31,14 +31,21 @@ describe("operational case-file renderer", () => {
     expect(html).toContain("Approval");
     expect(html).toContain("Patch");
     expect(html).toContain("Verified");
+    expect(html).toContain("Valid when recorded");
+    expect(html).toContain("Official fact changed");
+    expect(html).toContain("Controlled response");
     expect(html).toContain("Bright Data Web MCP");
     expect(html).toContain(VALID_EVIDENCE_HASH);
     expect(html).toContain("LISTING-1001");
     expect(html).toContain("LISTING-1002");
     expect(html).toContain("LISTING-1003");
+    expect(html).toContain("1</span><span><strong>Exact match");
+    expect(html).toContain("2</span><span><strong>Near matches excluded");
     expect(html).toContain("apply_containment_patch");
     expect(html).toContain("lease_id");
     expect(html).toContain("Fresh persisted-state re-read");
+    expect(html).toContain("Approved before and after state");
+    expect(html).toContain("excluded listings remain untouched");
     expect(html).toContain("not an independent third-party verification");
     expect(html).not.toContain("<button");
     expect(html).not.toContain("mutation endpoint");
@@ -48,8 +55,9 @@ describe("operational case-file renderer", () => {
     const pending = completeFeed(completeEvents.slice(0, 4));
     const realTarget = renderCaseHtml(buildCaseViewModel(pending));
     expect(realTarget).toContain("Open genuine TrueForge approval");
-    expect(realTarget).toContain("Approve in TrueForge");
+    expect(realTarget).toContain("Approve exact patch in TrueForge");
     expect(realTarget).toContain("Deny in TrueForge");
+    expect(realTarget).toContain("Human control point / 0 writes");
     expect(realTarget).toContain("http://127.0.0.1:8790/session/approval-001");
 
     const unsafeRequest = fixtureEvent(4, "approval.required", {
@@ -81,6 +89,8 @@ describe("operational case-file renderer", () => {
     expect(html).not.toContain("<img src=x");
     expect(html).toContain("Evidence contract blocked");
     expect(html).toContain("Evidence event rejected");
+    expect(html).toContain("Evidence rejected");
+    expect(html).not.toContain("Official CPSC evidence was retrieved through Bright Data");
     expect(html).not.toContain("Official source, retrieved through");
   });
 

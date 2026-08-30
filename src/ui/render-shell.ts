@@ -248,12 +248,39 @@ function renderPriorState(model: CaseViewModel, runtime: NormalizedRuntimeState)
   const leaseStatus = firstString(lease, "status");
   const listingStatus = firstString(listing, "status", "publication_status", "publicationStatus");
   const latestEvent = model.events.at(-1);
+  const evidenceSource = objectValue(model.evidence?.payload, "source") ?? {};
+  const evidenceAuthority = firstString(evidenceSource, "authority");
+  const evidenceTransport = firstString(evidenceSource, "transport");
+  const evidenceContract = checkEvidenceContract(model.evidence);
+  const evidenceCausalLabel = !model.evidence
+    ? "Awaiting official fact"
+    : !evidenceContract.valid
+      ? "Evidence rejected"
+      : model.stages[0]?.status === "stale"
+        ? "Evidence must be refreshed"
+        : "Official fact changed";
+  const evidenceState = !model.evidence
+    ? "Waiting for a canonical evidence receipt."
+    : !evidenceContract.valid
+      ? "The received event failed the canonical evidence contract and cannot unlock containment."
+      : model.stages[0]?.status === "complete"
+        ? `${evidenceAuthority} evidence was retrieved through ${evidenceTransport}.`
+        : "The validated evidence receipt cannot unlock containment in its current state.";
   return `<section class="prior-state" id="overview" aria-labelledby="prior-state-title">
-    <div>
-      <p class="eyebrow"><a href="/">Case records</a> / ${display(model.caseId)}</p>
-      <h1 id="prior-state-title">Case ${display(model.caseId)}</h1>
-      <p class="lede">Evidence-bound containment record. Each persisted stage stays visible from official source retrieval through the fresh state re-read.</p>
-      <p class="lede lede--secondary">Lease <strong>${display(leaseId)}</strong> covers item <strong>${display(itemNumber)}</strong> from batch <strong>${display(batchCode)}</strong>. Its current recorded state is <strong>${display(leaseStatus)}</strong>; listing <strong>${display(listingId)}</strong> is <strong>${display(listingStatus)}</strong>.</p>
+    <div class="case-hero">
+      <div class="case-hero__heading">
+        <div>
+          <p class="eyebrow"><a href="/">Case records</a> / Recall containment</p>
+          <h1 id="prior-state-title">Containment case ${display(model.caseId)}</h1>
+          <p class="lede">A previously active listing is re-evaluated only after official facts change. Containment remains bound to exact evidence, exact matching, native human approval, one atomic patch, and a fresh persisted-state read.</p>
+        </div>
+        <div class="case-hero__phase"><span>Current position</span><strong>${escapeHtml(currentStageSummary(model))}</strong></div>
+      </div>
+      <ol class="causal-strip" aria-label="Case causal summary">
+        <li><span class="causal-strip__number">01</span><div><strong>Valid when recorded</strong><p>Listing ${display(listingId)} was ${display(listingStatus)} for item ${display(itemNumber)} and batch ${display(batchCode)}.</p></div></li>
+        <li><span class="causal-strip__number">02</span><div><strong>${escapeHtml(evidenceCausalLabel)}</strong><p>${escapeHtml(evidenceState)}</p></div></li>
+        <li><span class="causal-strip__number">03</span><div><strong>Controlled response</strong><p>Only the exact item and batch may advance through native approval.</p></div></li>
+      </ol>
     </div>
     <dl class="state-facts">
       <div><dt>Case</dt><dd class="mono">${display(model.caseId)}</dd></div>
@@ -364,6 +391,11 @@ function renderProof(model: CaseViewModel): string {
   return `<section class="stage" id="proof" aria-labelledby="proof-title">
     ${sectionHeader(2, "Deterministic proof", stage.status, "Exact item + batch / sandbox output")}
     <div class="rule-banner"><span class="rule-banner__operator">AND</span><p>Contain only records where <code>item_number = ${display(item)}</code> and <code>batch_code = ${display(batch)}</code>.</p></div>
+    <div class="proof-verdict" aria-label="Deterministic match result">
+      <div><span class="proof-verdict__value">${exact ? "1" : "0"}</span><span><strong>Exact match</strong><small>Item and batch both match</small></span></div>
+      <div><span class="proof-verdict__value">${exclusions.length}</span><span><strong>Near matches excluded</strong><small>Different fields stay visible below</small></span></div>
+      <p>No probability and no model judgment authorizes this result.</p>
+    </div>
     <div class="match-grid">
       ${exact ? matchRow(exact, "exact") : `<p class="notice notice--danger">The completed analysis did not supply its exact match.</p>`}
       ${exclusions.map((entry) => matchRow(entry, "excluded")).join("") || `<p class="notice notice--warning">No excluded near matches were supplied.</p>`}
@@ -400,7 +432,8 @@ function renderApproval(model: CaseViewModel, runtime: NormalizedRuntimeState): 
     stateCopy = stageNote(model, "approval", "Approval not accepted");
   } else if (request && !resolution) {
     stateCopy = `<div class="approval-airlock">
-      <div><p class="eyebrow">Human control point</p><h3>Paused for genuine TrueForge approval</h3><p>No retailer state changes while this case is pending. Review the immutable action and exact arguments below, then choose inside TrueForge's native approval UI.</p><div class="approval-choices" aria-label="Decisions available in TrueForge"><span>Approve in TrueForge</span><span>Deny in TrueForge</span></div></div>
+      <span class="approval-airlock__lock" aria-hidden="true">HOLD</span>
+      <div><p class="eyebrow">Human control point / 0 writes</p><h3>Execution is paused for genuine TrueForge approval</h3><p>No retailer state changes while this case is pending. Review the immutable action and exact arguments below, then choose inside TrueForge's native approval UI.</p><div class="approval-choices" aria-label="Decisions available in TrueForge"><span>Approve exact patch in TrueForge</span><span>Deny in TrueForge</span></div></div>
       ${targetInfo.href ? `<a class="button" data-ui-key="approval-target" href="${escapeHtml(targetInfo.href)}" target="_blank" rel="noopener noreferrer">Open genuine TrueForge approval<span class="sr-only"> in a new tab</span></a>` : `<p class="target-missing">${targetInfo.blocked ? "This hosted read-only shell cannot open a local TrueForge approval target. Use the native local session instead." : "No verified TrueForge approval target was supplied. Open the native TrueForge session directly."}</p>`}
     </div>`;
   } else if (resolution && stage.status === "denied") {
@@ -438,14 +471,22 @@ function renderPatch(model: CaseViewModel): string {
   const lease = objectValue(payload, "lease") ?? {};
   const listing = objectValue(payload, "listing") ?? {};
   const replay = booleanValue(payload, "idempotent_replay") ?? booleanValue(payload, "idempotentReplay");
+  const prior = readSnapshot(model);
+  const priorLeaseStatus = firstString(prior.lease, "status");
+  const priorListingStatus = firstString(prior.listing, "status", "publication_status", "publicationStatus");
+  const nextLeaseStatus = firstString(lease, "status");
+  const nextListingStatus = firstString(listing, "status", "publication_status", "publicationStatus");
   return `<section class="stage" id="patch" aria-labelledby="patch-title">
     ${sectionHeader(4, "Atomic patch", stage.status, "One version-checked mutation")}
     ${replay ? `<div class="notice notice--info"><strong>Idempotent replay</strong><p>The same patch ID returned its existing receipt. No second mutation was applied.</p></div>` : ""}
     <div class="receipt-card">
       <div class="receipt-card__title"><p class="eyebrow">Atomic patch receipt</p><h3>${display(patchId)}</h3></div>
+      <div class="patch-diff" aria-label="Approved before and after state">
+        <div class="patch-diff__header"><span>Object</span><span>Before</span><span>After</span></div>
+        <div><strong>${display(firstString(lease, "lease_id", "leaseId", "id"))}</strong><code>${display(priorLeaseStatus)}</code><code>${display(nextLeaseStatus)}</code></div>
+        <div><strong>${display(firstString(listing, "listing_id", "listingId", "id"))}</strong><code>${display(priorListingStatus)}</code><code>${display(nextListingStatus)}</code></div>
+      </div>
       <dl>
-        <div><dt>Lease</dt><dd><strong>${display(firstString(lease, "lease_id", "leaseId", "id"))}</strong> -&gt; ${display(firstString(lease, "status"))}</dd></div>
-        <div><dt>Listing</dt><dd><strong>${display(firstString(listing, "listing_id", "listingId", "id"))}</strong> -&gt; ${display(firstString(listing, "status", "publication_status", "publicationStatus"))}</dd></div>
         <div><dt>Version</dt><dd>${display(payload.prior_version ?? payload.priorVersion)} -&gt; ${display(payload.new_version ?? payload.newVersion)}</dd></div>
         <div><dt>Receipt hash</dt><dd class="mono breakable">${display(receiptHash)}</dd></div>
       </dl>
@@ -482,7 +523,7 @@ function renderVerification(model: CaseViewModel): string {
   const readAt = firstString(payload, "read_at", "readAt") ?? model.verification.timestamp;
   return `<section class="stage stage--verified" id="verified" aria-labelledby="verified-title">
     ${sectionHeader(5, "Fresh persisted-state re-read", stage.status, "Verification after mutation")}
-    <div class="verified-banner"><span class="verified-banner__mark" aria-hidden="true">OK</span><div><p class="eyebrow">Persisted result confirmed</p><h3>The affected lease is contained.</h3><p>This is a fresh read of stored retailer state after the patch, not an independent third-party verification.</p></div></div>
+    <div class="verified-banner"><span class="verified-banner__mark" aria-hidden="true">OK</span><div><p class="eyebrow">Persisted result confirmed</p><h3>The affected listing is contained; ${exclusions.length} excluded listing${exclusions.length === 1 ? " remains" : "s remain"} untouched.</h3><p>This is a fresh read of stored retailer state after the patch, not an independent third-party verification.</p></div></div>
     <ul class="verification-list">
       ${verificationCheck("Lease", lease, ["lease_id", "leaseId", "id"])}
       ${verificationCheck("Listing", listing, ["listing_id", "listingId", "id"])}
@@ -720,13 +761,18 @@ function renderPrimaryNavigation(model: CaseViewModel | undefined, runtime: Norm
   const currentCase = model
     ? `<div class="console-nav__group"><p class="console-nav__label">Current case</p>
         <a class="console-nav__link console-nav__link--active" href="${queueLink(model.caseId)}" aria-current="page"><span class="console-nav__icon" aria-hidden="true">#</span><span><strong>${escapeHtml(model.caseId)}</strong><small>${currentCaseCopy ? `${escapeHtml(currentCaseCopy)} / ` : ""}${escapeHtml(currentStageSummary(model))}</small></span></a>
+        <a class="console-nav__link console-nav__link--sub" href="#evidence"><span class="console-nav__icon" aria-hidden="true">1</span><span>Official evidence</span></a>
+        <a class="console-nav__link console-nav__link--sub" href="#proof"><span class="console-nav__icon" aria-hidden="true">2</span><span>Exact-match proof</span></a>
+        <a class="console-nav__link console-nav__link--sub" href="#approval"><span class="console-nav__icon" aria-hidden="true">3</span><span>Native approval</span></a>
+        <a class="console-nav__link console-nav__link--sub" href="#patch"><span class="console-nav__icon" aria-hidden="true">4</span><span>Atomic patch</span></a>
+        <a class="console-nav__link console-nav__link--sub" href="#verified"><span class="console-nav__icon" aria-hidden="true">5</span><span>Fresh re-read</span></a>
         <a class="console-nav__link console-nav__link--sub" href="#run-activity"><span class="console-nav__icon" aria-hidden="true">-</span><span>Run activity</span></a>
       </div>`
     : "";
   return `<nav class="console-nav" aria-label="Primary navigation">
     <div class="console-nav__group"><p class="console-nav__label">Operations</p>
       <a class="console-nav__link${model ? "" : " console-nav__link--active"}" href="/"${model ? "" : ` aria-current="page"`}><span class="console-nav__icon" aria-hidden="true">[]</span><span>Case records</span>${runtime.queueState === "ready" ? `<span class="console-nav__count">${runtime.queueCases.length}</span>` : ""}</a>
-      <a class="console-nav__link" href="${model ? "#overview" : "#workflow"}"><span class="console-nav__icon" aria-hidden="true">o</span><span>Control flow</span></a>
+      ${model ? "" : `<a class="console-nav__link" href="#workflow"><span class="console-nav__icon" aria-hidden="true">o</span><span>Control flow</span></a>`}
     </div>
     ${currentCase}
     <div class="console-nav__group"><p class="console-nav__label">System</p>
