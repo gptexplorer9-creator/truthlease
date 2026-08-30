@@ -10,6 +10,7 @@ import {
 
 const baseUrl = process.env.TRUTHLEASE_BASE_URL;
 const connectorId = process.env.TRUTHLEASE_CONNECTOR_ID ?? 'local-trueforge';
+const runOnce = process.env.CONNECTOR_RUN_ONCE === 'true';
 const caseId = process.env.TRUTHLEASE_CASE_ID;
 const runId = process.env.TRUTHLEASE_RUN_ID;
 const sessionId = process.env.TRUTHLEASE_TRUEFORGE_SESSION_ID;
@@ -56,7 +57,14 @@ const stop = () => { stopping = true; connector.stop(); };
 process.once('SIGINT', stop); process.once('SIGTERM', stop);
 console.log('TruthLease outbound connector started');
 while (!stopping) {
-  try { const result = await connector.syncOnce(); if (result.sent) console.log(`Appended ${result.sent} event(s)`); }
-  catch { /* health is available through the host connector instance; do not log secrets or payloads */ }
+  try {
+    const result = await connector.syncOnce();
+    if (result.sent) console.log(`Appended ${result.sent} event(s)`);
+    if (runOnce) break;
+  }
+  catch (error) {
+    if (runOnce) throw error;
+    /* health is available through the host connector instance; do not log secrets or payloads */
+  }
   await new Promise((resolve) => setTimeout(resolve, connector.nextDelayMs()));
 }
