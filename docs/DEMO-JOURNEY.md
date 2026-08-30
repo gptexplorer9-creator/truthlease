@@ -1,107 +1,121 @@
-# TruthLease demo journey
+# TruthLease judge demo: the action was right, then the truth changed
 
-## The use case
+Target length: 2 minutes 40 seconds. This is the presenter journey for a qualifying run, not evidence that a current run has occurred.
 
-A marketplace has already published a HABA Rainbow Rattle listing. That decision is represented by Truth Lease `TL-042`: the listing may remain active only while no official recall matches both item `2012261001` and batch `0925`.
+## The story in one sentence
 
-CPSC recall `26-719` changes that fact.
+An agent validly published a listing under the facts available at the time; after the official facts changed, TruthLease used canonical evidence, deterministic analysis, native human approval, one bounded local mutation, and a fresh persisted-state re-read to contain only the newly invalid action.
 
-The product-safety operator's job is not to ask an agent to "handle the recall." The job is narrower and harder:
+## Evidence rule before presenting
 
-1. establish that the new evidence is official and fresh;
-2. prove that exactly one listing matches both identifiers;
-3. keep two near matches out of the action;
-4. review the exact proposed mutation;
-5. approve or deny it in TrueForge;
-6. confirm the persisted outcome after the action.
+Use the assertive talk track below only while the corresponding evidence is visible from the same current run. A fixture, screenshot, or code path can explain the product, but it must be labelled as such and cannot establish live Bright Data retrieval, a genuine TrueForge sandbox event, native approval, mutation, or verification. If the genuine run is unavailable, present this as the intended journey and stop before claiming completion.
 
-**Sticky line:** The agent may investigate. It cannot act until a person approves the exact call.
+## Architecture and sequence
 
-## Five beats
+```mermaid
+sequenceDiagram
+    participant A as TrueForge agent
+    participant B as Bright Data Web MCP
+    participant C as Canonical CPSC source
+    participant S as TrueForge sandbox
+    participant H as Human approver
+    participant M as Local TruthLease MCP
+    participant R as Owned retailer state
 
-| Beat | Operator question | What the product shows | Proof to point at |
-| --- | --- | --- | --- |
-| 1. A prior decision is now at risk | Why is this listing live? | Lease `TL-042`, active listing `LISTING-1001`, item and batch identifiers | The decision existed before the incident and has an explicit validity condition |
-| 2. An external fact changes | Is the recall real and current? | Official CPSC authority, Bright Data transport, retrieval time, canonical URL, content hash | Evidence is trace-bound before TruthLease records a Bright Data receipt |
-| 3. The agent narrows the blast radius | Which records should change? | One exact item-and-batch match and two excluded one-field near matches; TrueForge sandbox output | `AND` matching prevents a broad title or SKU recall from touching adjacent inventory |
-| 4. A person owns the consequential decision | What exactly will happen if I approve? | Native TrueForge pause and immutable `apply_containment_patch` arguments | The browser has no mutation control; the server requires the exact approved TrueForge call |
-| 5. The system proves the outcome | Did the intended state actually persist? | Lease revoked, exact listing unpublished, near matches still published, state version `7 -> 8` | A fresh persisted-state read, not a tool-success message, closes the case |
+    A->>B: Retrieve allow-listed recall
+    B->>C: Read canonical CPSC evidence
+    B-->>A: Source response and trace
+    A->>M: Record evidence; read lease and state
+    A->>S: Analyze item AND batch
+    S-->>A: 1 exact match; 2 near matches excluded
+    A->>H: Native apply_containment_patch approval pause
+    H-->>A: Approve exact immutable call
+    A->>M: Apply one version-checked atomic patch
+    M->>R: Revoke lease and unpublish exact listing
+    A->>M: verify_containment_state
+    M->>R: Fresh persisted-state read
+    R-->>A: Exact changed; near matches unchanged
+```
 
-**Closing line:** The demo does not end when a tool says "success." It ends when a fresh read proves what changed - and what did not.
+Bright Data is the qualifying web transport; CPSC is the source authority. TrueForge owns the native approval pause. The local TruthLease MCP owns the retailer mutation. The final verification is a fresh re-read of TruthLease-owned persisted state, not independent third-party verification.
 
-## Three-minute talk track
+## 2:40 talk track
 
-### 0:00-0:25  -  Start with the consequence
+### 0:00-0:25 — The action was valid when taken
 
-**Show:** the case header and prior state.
+**Show:** Truth Lease `TL-042` and the initial retailer state.
 
-**Say:** "This toy listing is already live. Its publishing decision is leased to one condition: no official recall may match item 2012261001 and batch 0925. A new CPSC recall now challenges that condition."
+**Say:** “This agent action was valid when it happened. `LISTING-1001` was published under an explicit condition: it could remain live while no official recall matched both item `2012261001` and batch `0925`. TruthLease recorded the decision, its supporting fact, and the downstream listing that depended on it.”
 
-**Do not say:** that TruthLease continuously monitors every retailer or recall. This demo begins with one live evidence-driven case.
+**Point at:** lease status `active`, listing status `published`, and state version `7`.
 
-### 0:25-0:55  -  Establish the new fact
+### 0:25-0:55 — The official facts changed
 
-**Show:** Official evidence.
+**Show:** the current Bright Data tool trace and the canonical CPSC evidence receipt.
 
-**Say:** "The agent retrieves the canonical CPSC result through Bright Data. TruthLease binds the exact response, URL, identifiers, and retrieval time to the TrueForge session before it will label the receipt as Bright Data evidence."
+**Say only with a current trace:** “The official facts later changed. Bright Data Web MCP retrieved the allow-listed CPSC source, and TruthLease bound the canonical URL, recall `26-719`, exact identifiers, retrieval time, and content hash to this TrueForge run.”
 
-**Point at:** authority, transport, source URL, retrieval time, and hash.
+**Point at:** `provider: bright-data`, the `cpsc.gov/Recalls/...` URL, item, batch, timestamp, and SHA-256 receipt.
 
-### 0:55-1:25  -  Prove the exact target
+**If the trace is not current:** say “The configured qualifying path retrieves this source through Bright Data,” and label the live retrieval evidence pending.
 
-**Show:** Deterministic proof.
+### 0:55-1:25 — Deterministic analysis limits the blast radius
 
-**Say:** "A title match is not enough. The sandbox applies an AND rule across item and batch. One listing matches both. Two nearby records match only one field, so they are explicitly excluded."
+**Show:** the native TrueForge sandbox event, execution response, and analysis output.
 
-**Point at:** `LISTING-1001` as exact; `LISTING-1002` and `LISTING-1003` as exclusions.
+**Say only with those native events:** “TrueForge ran deterministic analysis in its sandbox. The rule is item **and** batch, not a title guess. It found exactly one match: `LISTING-1001`. `LISTING-1002` matches only the item, and `LISTING-1003` only the batch, so both are explicitly excluded.”
 
-### 1:25-2:00  -  Stop at the human boundary
+**Point at:** one exact ID, the two excluded IDs, state version `7`, and `analysis_sha256`.
 
-**Show:** Native approval.
+### 1:25-1:55 — Genuine approval pauses execution
 
-**Say:** "This is the product's control point. The agent has done the investigation, but no retailer state has changed. The operator sees one immutable, version-checked patch and chooses inside TrueForge - not in this browser."
+**Show:** the native TrueForge `tool.approval_required` state.
 
-**Pause:** let the genuine approval state remain visible before approving.
+**Say:** “The investigation is complete, but nothing has changed yet. TrueForge pauses the actual `apply_containment_patch` tool call for a person to inspect. This is the genuine native approval boundary—not a prompt asking the model to confirm itself.”
 
-**Point at:** listing ID, lease ID, expected version, evidence receipt, analysis hash, and reason.
+**Pause before approval. Point at:** `listing_id`, `lease_id`, `patch_id`, `expected_version`, evidence receipt, analysis hash, and reason.
 
-### 2:00-2:30  -  Apply one bounded mutation
+### 1:55-2:20 — One local atomic containment patch
 
-**Show:** Atomic patch.
+**Show:** the approved local MCP call and patch receipt.
 
-**Say:** "The approved backend action revokes the invalidated lease and unpublishes only its exact dependent listing in one atomic write. Changed arguments, stale versions, and duplicate non-identical patch IDs fail closed."
+**Say:** “After approval, the local TruthLease MCP applies one atomic, version-checked patch. It revokes `TL-042` and unpublishes only `LISTING-1001`. Changed arguments, a stale version, or reuse of the patch ID with different inputs fail closed.”
 
-### 2:30-3:00  -  Verify, then finish
+**Point at:** state transition `7 -> 8`, lease `active -> revoked`, and exact listing `published -> unpublished`.
 
-**Show:** Fresh persisted-state re-read.
+### 2:20-2:40 — Read persisted state again
 
-**Say:** "A receipt alone is not the result. TruthLease reads the owned state again. The lease is revoked, the recalled listing is unpublished, both near matches remain published, and the state version matches the durable receipt."
+**Show:** the later `verify_containment_state` result.
 
-**Finish with:** "That is TruthLease: when a fact changes, an agent can trace which prior decision is no longer valid, propose the smallest action, pause for accountable approval, and prove the resulting state."
+**Say:** “A tool receipt is not the ending. TruthLease performs a fresh persisted-state re-read. It observes the exact listing unpublished, the lease revoked, both near matches still published, and the durable state version aligned with the patch receipt.”
 
-## Presenter recovery paths
+**Finish:** “TruthLease gives actions an expiration condition: when the truth changes, it finds the smallest invalidated dependency, stops for accountable approval, applies one bounded correction, and re-reads the result.”
 
-- If the live feed is reconnecting, say that connection state is not operation state. Do not imply the case failed.
-- If TrueForge is unavailable, stop the qualifying demo. A reference fixture may explain the UI, but it must remain visibly labeled and cannot prove live evidence, native approval, or mutation.
-- If the version changed before approval, show the conflict and start a new evidence-analysis-approval run. Do not edit or auto-retry the approved arguments.
-- If approval is denied, finish on the denied state and emphasize that no patch is authorized.
+## Judge proof map
 
-## Truth boundaries
+| Judge question | Evidence to show | Boundary |
+| --- | --- | --- |
+| Was the earlier action reasonable? | `TL-042`, supporting claim, active initial state | Owned synthetic retailer state |
+| Did official evidence change? | Current Bright Data trace plus canonical CPSC receipt | Never substitute a fixture for live retrieval |
+| Why only one listing? | Native sandbox execution: one exact item+batch match and two one-field exclusions | Deterministic code, not model prose |
+| Who authorized the consequence? | Native TrueForge approval pause and resolution for the exact tool arguments | Browser UI is display-only |
+| What changed? | One atomic local MCP patch receipt | No customer, inventory, shipment, refund, or notification action |
+| Did it persist? | Fresh post-action `verify_containment_state` read | Owned-state re-read, not third-party verification |
 
-- The retailer state is owned synthetic demo state, not a production retailer account.
-- The qualifying evidence path uses Bright Data and the official CPSC result.
-- The sandbox and approval are native TrueForge events.
-- The case-file browser is display-only.
-- The demonstrated mutation is local and version-checked.
-- One successful run proves the P0 workflow, not retention, production readiness, marketplace coverage, or autonomous authority.
+## Recovery paths
 
-## Refero decision ledger
+- If Bright Data or the canonical CPSC retrieval fails, fail closed. Do not silently substitute cached or fixture evidence.
+- If the TrueForge sandbox event or execution response is absent, do not claim sandbox verification.
+- If the genuine approval pause is unavailable, stop the qualifying demo; prompt-level confirmation is not equivalent.
+- If the expected version is stale, show the conflict and start a new evidence-analysis-approval run. Do not alter approved arguments automatically.
+- If approval is denied, finish on the denial and show that no patch was authorized.
+- If the hosted feed is empty or reconnecting, describe connection state only. Do not invent a case or infer operation success.
 
-| Decision | Source | Role | Why |
-| --- | --- | --- | --- |
-| Tell the story as five operator questions | Refero journey fallback + current five-stage rail | Journey structure | Each screen answers a decision the operator must make |
-| Lead with the already-live listing | Refero copy rule: write in scenes, not claims | Context | Consequence is understandable before architecture |
-| Keep headings operational | Refero product-copy rule | Orientation | The product UI reports status; the presenter supplies narrative |
-| Use hashes, versions, exact IDs as proof | Existing case-ledger reference lock | Trust evidence | Concrete records replace adjectives and demo hype |
-| End on a fresh read | Product requirement and real run | Outcome | Tool completion is not confused with persisted success |
-| Preserve a visible approval pause | User brief + TrueForge native boundary | Human authority | The most important product moment is a deliberate stop |
+## Claim boundaries
+
+- The retailer is owned synthetic demo state, not a production retailer account.
+- Fixtures support tests and labelled walkthroughs; fixtures are never live evidence.
+- A genuine run requires current recorded Bright Data, native sandbox, native approval, local MCP mutation, and fresh-read events from one traceable journey.
+- The case browser displays evidence; it does not approve or mutate retailer state.
+- A successful run demonstrates this narrow containment workflow, not production readiness, continuous monitoring, marketplace coverage, retention, or autonomous authority.
+- Live URL, current genuine-run evidence, and demo video evidence remain pending until separately verified and recorded in the release checklist.
