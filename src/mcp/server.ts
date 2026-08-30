@@ -232,6 +232,7 @@ const SUPPORTED_EVENT_TYPES = new Set([
   "verification.completed", "verification.failed",
 ]);
 const LEDGER_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
+const CONNECTOR_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const LEDGER_IDEMPOTENCY_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const MAX_CONNECTOR_EVENTS = 100;
 
@@ -261,6 +262,14 @@ function ledgerIdentifier(record: Record<string, unknown>, field: string): strin
   return value;
 }
 
+function connectorIdentifier(record: Record<string, unknown>): string {
+  const value = requiredString(record, "connectorId");
+  if (!CONNECTOR_IDENTIFIER.test(value)) {
+    throw new LedgerError("invalid_input", "connectorId must be 1-128 URL-safe identifier characters.");
+  }
+  return value;
+}
+
 function idempotencyKey(record: Record<string, unknown>): string {
   const value = requiredString(record, "idempotencyKey");
   if (!LEDGER_IDEMPOTENCY_KEY.test(value)) {
@@ -282,8 +291,8 @@ function validateConnectorBatch(
   body: unknown,
   pathConnectorId: string,
 ): ValidatedConnectorBatch {
-  if (!LEDGER_IDENTIFIER.test(pathConnectorId)) {
-    throw new LedgerError("invalid_input", "connectorId must be 1-160 URL-safe identifier characters.");
+  if (!CONNECTOR_IDENTIFIER.test(pathConnectorId)) {
+    throw new LedgerError("invalid_input", "connectorId must be 1-128 URL-safe identifier characters.");
   }
   if (!isRecord(body)) throw new LedgerError("invalid_input", "Connector batch must be a JSON object.");
 
@@ -300,7 +309,7 @@ function validateConnectorBatch(
   const caseId = ledgerIdentifier(rawCase, "caseId");
   const runId = ledgerIdentifier(rawRun, "runId");
   const runCaseId = ledgerIdentifier(rawRun, "caseId");
-  const runConnectorId = ledgerIdentifier(rawRun, "connectorId");
+  const runConnectorId = connectorIdentifier(rawRun);
   if (runCaseId !== caseId) throw new LedgerError("invalid_input", "Run caseId must match the batch caseId.");
   if (runConnectorId !== pathConnectorId) throw new LedgerError("authentication_failed", "Connector identity mismatch.");
 
@@ -329,7 +338,7 @@ function validateConnectorBatch(
     }
     const eventCaseId = ledgerIdentifier(rawEvent, "caseId");
     const eventRunId = ledgerIdentifier(rawEvent, "runId");
-    const eventConnectorId = ledgerIdentifier(rawEvent, "connectorId");
+    const eventConnectorId = connectorIdentifier(rawEvent);
     if (eventCaseId !== caseId) {
       throw new LedgerError("invalid_input", `Event ${index + 1} caseId must match the batch caseId.`);
     }
@@ -350,6 +359,10 @@ function validateConnectorBatch(
     const payload = rawEvent.payload;
     if (!isRecord(payload)) throw new LedgerError("invalid_input", "Every connector event payload must be a JSON object.");
     canonicalJson(payload);
+    const occurredAt = requiredString(rawEvent, "occurredAt");
+    if (!Number.isFinite(Date.parse(occurredAt))) {
+      throw new LedgerError("invalid_input", "occurredAt must be a valid timestamp.");
+    }
     return {
       eventId: ledgerIdentifier(rawEvent, "eventId"),
       caseId: eventCaseId,
@@ -359,6 +372,7 @@ function validateConnectorBatch(
       connectorId: eventConnectorId,
       eventType,
       payload: payload as LedgerJson,
+      occurredAt,
     };
   });
 
@@ -494,7 +508,7 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
           .map((event) => ({
             type: event.eventType,
             id: event.eventId,
-            timestamp: event.receivedAt,
+            timestamp: event.occurredAt,
             runId: event.runId,
             sequence: event.sequence,
             payload: event.payload,
@@ -554,6 +568,9 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
         throw new LedgerError("invalid_input", "connectorId path parameter is required.");
       }
       const connectorId = rawConnectorId;
+      if (!CONNECTOR_IDENTIFIER.test(connectorId)) {
+        throw new LedgerError("invalid_input", "connectorId must be 1-128 URL-safe identifier characters.");
+      }
       const authorization = request.header("authorization");
       const timestamp = request.header("x-truthlease-timestamp");
       const signature = request.header("x-truthlease-signature");
@@ -564,16 +581,14 @@ export function createApp(store: RetailerStore, options: AppOptions = {}) {
           : { kind: "bearer" as const, token: "" };
       const verified = authenticateConnectorIngestion(options.connectorAuth, connectorId, request.rawBody ?? "", presented);
       const batch = validateConnectorBatch(request.body, connectorId);
-      const caseResult = await ledger.createCase(batch.caseInput);
-      const runResult = await ledger.startRun(batch.runInput);
-      let cursor: { eventId: string; sequence: number } | null = null;
-      let allReplayed = caseResult.idempotentReplay && runResult.idempotentReplay;
-      for (const eventInput of batch.eventInputs) {
-        const result = await ledger.appendAuthenticatedEvent(verified, eventInput);
-        cursor = { eventId: result.value.eventId, sequence: result.value.sequence };
-        allReplayed = allReplayed && result.idempotentReplay;
-      }
-      response.status(allReplayed ? 200 : 202).json({ accepted: true, cursor, idempotentReplay: allReplayed });
+      const result = await ledger.ingestAuthenticatedBatch(verified, batch);
+      const finalEvent = result.events.at(-1);
+      const cursor = finalEvent ? { eventId: finalEvent.eventId, sequence: finalEvent.sequence } : null;
+      response.status(result.idempotentReplay ? 200 : 202).json({
+        accepted: true,
+        cursor,
+        idempotentReplay: result.idempotentReplay,
+      });
     } catch (error) {
       if (error instanceof LedgerError) {
         response.status(ledgerStatus(error)).json({ error: error.message, code: error.code });

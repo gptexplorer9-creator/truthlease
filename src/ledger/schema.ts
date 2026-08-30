@@ -37,6 +37,7 @@ export const ledgerMigrationStatements = [
     event_type TEXT NOT NULL,
     payload JSONB NOT NULL,
     payload_sha256 CHAR(64) NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
     received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (sequence >= 1),
     CHECK (length(idempotency_key) BETWEEN 1 AND 200),
@@ -45,8 +46,10 @@ export const ledgerMigrationStatements = [
     UNIQUE (run_id, sequence),
     UNIQUE (run_id, idempotency_key)
   )`,
-  `CREATE INDEX IF NOT EXISTS truthlease_ledger_events_case_received_idx
-    ON truthlease_ledger_events (case_id, received_at ASC, event_id ASC)`,
+  `ALTER TABLE truthlease_ledger_events ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+  `ALTER TABLE truthlease_ledger_events ALTER COLUMN occurred_at DROP DEFAULT`,
+  `CREATE INDEX IF NOT EXISTS truthlease_ledger_events_case_occurred_idx
+    ON truthlease_ledger_events (case_id, occurred_at ASC, sequence ASC, event_id ASC)`,
   `CREATE INDEX IF NOT EXISTS truthlease_ledger_events_run_sequence_idx
     ON truthlease_ledger_events (run_id, sequence ASC)`,
 ] as const;

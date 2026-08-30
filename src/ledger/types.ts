@@ -58,6 +58,9 @@ export interface LedgerEvent {
   readonly eventType: string;
   readonly payload: LedgerJson;
   readonly payloadSha256: string;
+  /** Time reported by the genuine upstream source. */
+  readonly occurredAt: string;
+  /** Time the TruthLease ledger accepted the event. */
   readonly receivedAt: string;
 }
 
@@ -95,6 +98,20 @@ export interface AppendLedgerEventInput {
   readonly connectorId: string;
   readonly eventType: string;
   readonly payload: LedgerJson;
+  readonly occurredAt: string;
+}
+
+export interface IngestLedgerBatchInput {
+  readonly caseInput: CreateLedgerCaseInput;
+  readonly runInput: StartLedgerRunInput;
+  readonly eventInputs: readonly AppendLedgerEventInput[];
+}
+
+export interface LedgerBatchWriteResult {
+  readonly case: LedgerCase;
+  readonly run: LedgerRun;
+  readonly events: readonly LedgerEvent[];
+  readonly idempotentReplay: boolean;
 }
 
 export interface LedgerWriteResult<Value> {

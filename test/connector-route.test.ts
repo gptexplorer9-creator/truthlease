@@ -55,6 +55,19 @@ class RouteLedger {
     return { value, idempotentReplay: false };
   }
 
+  public async ingestAuthenticatedBatch(authentication: unknown, input: { caseInput: CreateLedgerCaseInput; runInput: StartLedgerRunInput; eventInputs: readonly AppendLedgerEventInput[] }) {
+    const caseResult = await this.createCase(input.caseInput);
+    const runResult = await this.startRun(input.runInput);
+    const events: LedgerEvent[] = [];
+    let idempotentReplay = caseResult.idempotentReplay && runResult.idempotentReplay;
+    for (const event of input.eventInputs) {
+      const result = await this.appendAuthenticatedEvent(authentication, event);
+      events.push(result.value);
+      idempotentReplay = idempotentReplay && result.idempotentReplay;
+    }
+    return { case: caseResult.value, run: runResult.value, events, idempotentReplay };
+  }
+
   public async readCase(caseId: string): Promise<LedgerCaseDetail> {
     const ledgerCase = this.cases.get(caseId);
     if (!ledgerCase) throw new Error("missing case");
@@ -94,6 +107,7 @@ function batch() {
         connectorId: "bright-data",
         eventType: "state.snapshot",
         payload: { lease: { lease_id: "TL-042", status: "active" } },
+        occurredAt: "2026-08-29T19:59:00.000Z",
       },
       {
         eventId: "event-2",
@@ -104,6 +118,7 @@ function batch() {
         connectorId: "bright-data",
         eventType: "evidence.fetched",
         payload: { title: "Official recall" },
+        occurredAt: "2026-08-29T19:59:01.000Z",
       },
     ],
   };
@@ -170,7 +185,7 @@ describe("hosted connector ingestion routes", () => {
       caseId: "TL-042",
       runId: "run-1",
       lastSequence: 2,
-      events: [{ id: "event-2", sequence: 2, type: "evidence.fetched" }],
+      events: [{ id: "event-2", sequence: 2, type: "evidence.fetched", timestamp: "2026-08-29T19:59:01.000Z" }],
     });
 
     const replay = await ingest(batch());

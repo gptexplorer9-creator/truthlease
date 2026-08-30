@@ -9,6 +9,8 @@ import {
   type LedgerCasePage,
   type LedgerDatabase,
   type LedgerEvent,
+  type IngestLedgerBatchInput,
+  type LedgerBatchWriteResult,
   type LedgerRun,
   type LedgerWriteResult,
   type SqlRow,
@@ -46,10 +48,12 @@ type EventRow = SqlRow & {
   event_type: string;
   payload: unknown;
   payload_sha256: string;
+  occurred_at: string | Date;
   received_at: string | Date;
 };
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
+const CONNECTOR_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const IDEMPOTENCY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
 function iso(value: string | Date): string {
@@ -87,6 +91,7 @@ function toEvent(row: EventRow): LedgerEvent {
     eventType: row.event_type,
     payload: parseLedgerJson(row.payload),
     payloadSha256: row.payload_sha256,
+    occurredAt: iso(row.occurred_at),
     receivedAt: iso(row.received_at),
   };
 }
@@ -94,6 +99,12 @@ function toEvent(row: EventRow): LedgerEvent {
 function assertIdentifier(value: string, label: string): void {
   if (!IDENTIFIER.test(value)) {
     throw new LedgerError("invalid_input", `${label} must be 1-160 URL-safe identifier characters.`);
+  }
+}
+
+function assertConnectorIdentifier(value: string): void {
+  if (!CONNECTOR_IDENTIFIER.test(value)) {
+    throw new LedgerError("invalid_input", "connectorId must be 1-128 URL-safe identifier characters.");
   }
 }
 
@@ -111,6 +122,16 @@ function assertLabel(value: string, label: string): void {
 
 function requestHash(value: unknown): string {
   return sha256(canonicalJson(value));
+}
+
+function assertOccurredAt(value: string): void {
+  if (typeof value !== "string" || value.trim() === "" || !Number.isFinite(Date.parse(value))) {
+    throw new LedgerError("invalid_input", "occurredAt must be a valid timestamp.");
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }
 
 function cursorFor(value: LedgerCase): string {
@@ -144,13 +165,16 @@ export class TruthLeaseLedger {
   public constructor(private readonly database: LedgerDatabase) {}
 
   public async createCase(input: CreateLedgerCaseInput): Promise<LedgerWriteResult<LedgerCase>> {
-    assertIdentifier(input.caseId, "caseId");
-    assertIdempotencyKey(input.idempotencyKey);
-    assertLabel(input.caseType, "caseType");
-    const subject = canonicalJson(input.subject);
-    const hash = requestHash({ ...input, subject: JSON.parse(subject) });
+    this.validateCase(input);
+    return this.transactionWithRaceReplay((transaction) => this.createCaseIn(transaction, input));
+  }
 
-    return this.database.transaction(async (transaction) => {
+  private async createCaseIn(
+    transaction: SqlTransaction,
+    input: CreateLedgerCaseInput,
+  ): Promise<LedgerWriteResult<LedgerCase>> {
+      const subject = canonicalJson(input.subject);
+      const hash = requestHash({ ...input, subject: JSON.parse(subject) });
       const replay = await transaction.query<CaseRow>(
         "/* ledger.case.by_idempotency */ SELECT * FROM truthlease_ledger_cases WHERE idempotency_key = $1 FOR UPDATE",
         [input.idempotencyKey],
@@ -176,17 +200,18 @@ export class TruthLeaseLedger {
       const row = inserted.rows[0];
       if (row === undefined) throw new Error("Ledger case insert returned no record.");
       return { value: toCase(row), idempotentReplay: false };
-    });
   }
 
   public async startRun(input: StartLedgerRunInput): Promise<LedgerWriteResult<LedgerRun>> {
-    assertIdentifier(input.runId, "runId");
-    assertIdentifier(input.caseId, "caseId");
-    assertIdentifier(input.connectorId, "connectorId");
-    assertIdempotencyKey(input.idempotencyKey);
-    const hash = requestHash(input);
+    this.validateRun(input);
+    return this.transactionWithRaceReplay((transaction) => this.startRunIn(transaction, input));
+  }
 
-    return this.database.transaction(async (transaction) => {
+  private async startRunIn(
+    transaction: SqlTransaction,
+    input: StartLedgerRunInput,
+  ): Promise<LedgerWriteResult<LedgerRun>> {
+      const hash = requestHash(input);
       const replay = await transaction.query<RunRow>(
         "/* ledger.run.by_idempotency */ SELECT * FROM truthlease_ledger_runs WHERE idempotency_key = $1 FOR UPDATE",
         [input.idempotencyKey],
@@ -218,30 +243,27 @@ export class TruthLeaseLedger {
       const row = inserted.rows[0];
       if (row === undefined) throw new Error("Ledger run insert returned no record.");
       return { value: toRun(row), idempotentReplay: false };
-    });
   }
 
   public async appendAuthenticatedEvent(
     authentication: VerifiedConnector,
     input: AppendLedgerEventInput,
   ): Promise<LedgerWriteResult<LedgerEvent>> {
-    assertIdentifier(input.eventId, "eventId");
-    assertIdentifier(input.caseId, "caseId");
-    assertIdentifier(input.runId, "runId");
-    assertIdentifier(input.connectorId, "connectorId");
-    assertIdempotencyKey(input.idempotencyKey);
-    assertLabel(input.eventType, "eventType");
-    if (!Number.isSafeInteger(input.sequence) || input.sequence < 1) {
-      throw new LedgerError("invalid_input", "sequence must be a positive safe integer.");
-    }
-    if (!isVerifiedConnector(authentication, input.connectorId)) {
-      throw new LedgerError("authentication_failed", "A verified connector credential is required.");
-    }
-    const payload = canonicalJson(input.payload);
-    const payloadSha256 = sha256(payload);
-    const hash = requestHash({ ...input, payload: JSON.parse(payload) });
+    this.validateEvent(authentication, input);
+    return this.transactionWithRaceReplay((transaction) => this.appendEventIn(transaction, authentication, input));
+  }
 
-    return this.database.transaction(async (transaction) => {
+  private async appendEventIn(
+    transaction: SqlTransaction,
+    authentication: VerifiedConnector,
+    input: AppendLedgerEventInput,
+  ): Promise<LedgerWriteResult<LedgerEvent>> {
+      if (!isVerifiedConnector(authentication, input.connectorId)) {
+        throw new LedgerError("authentication_failed", "A verified connector credential is required.");
+      }
+      const payload = canonicalJson(input.payload);
+      const payloadSha256 = sha256(payload);
+      const hash = requestHash({ ...input, payload: JSON.parse(payload) });
       const run = await transaction.query<RunRow>(
         "/* ledger.run.lock */ SELECT * FROM truthlease_ledger_runs WHERE run_id = $1 FOR UPDATE",
         [input.runId],
@@ -278,12 +300,12 @@ export class TruthLeaseLedger {
       }
       const inserted = await transaction.query<EventRow>(
         `/* ledger.event.insert */ INSERT INTO truthlease_ledger_events
-          (event_id, case_id, run_id, sequence, idempotency_key, request_sha256, connector_id, event_type, payload, payload_sha256)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
+          (event_id, case_id, run_id, sequence, idempotency_key, request_sha256, connector_id, event_type, payload, payload_sha256, occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::timestamptz)
          RETURNING *`,
         [
           input.eventId, input.caseId, input.runId, input.sequence, input.idempotencyKey,
-          hash, input.connectorId, input.eventType, payload, payloadSha256,
+          hash, input.connectorId, input.eventType, payload, payloadSha256, input.occurredAt,
         ],
       );
       const row = inserted.rows[0];
@@ -293,6 +315,36 @@ export class TruthLeaseLedger {
         [input.runId],
       );
       return { value: toEvent(row), idempotentReplay: false };
+  }
+
+  /** Atomically creates/replays the case and run and appends/replays every event. */
+  public async ingestAuthenticatedBatch(
+    authentication: VerifiedConnector,
+    input: IngestLedgerBatchInput,
+  ): Promise<LedgerBatchWriteResult> {
+    this.validateCase(input.caseInput);
+    this.validateRun(input.runInput);
+    if (input.eventInputs.length === 0) {
+      throw new LedgerError("invalid_input", "A connector batch requires at least one event.");
+    }
+    for (const event of input.eventInputs) this.validateEvent(authentication, event);
+
+    return this.transactionWithRaceReplay(async (transaction) => {
+      const caseResult = await this.createCaseIn(transaction, input.caseInput);
+      const runResult = await this.startRunIn(transaction, input.runInput);
+      const events: LedgerEvent[] = [];
+      let allReplayed = caseResult.idempotentReplay && runResult.idempotentReplay;
+      for (const eventInput of input.eventInputs) {
+        const eventResult = await this.appendEventIn(transaction, authentication, eventInput);
+        events.push(eventResult.value);
+        allReplayed = allReplayed && eventResult.idempotentReplay;
+      }
+      return {
+        case: caseResult.value,
+        run: runResult.value,
+        events,
+        idempotentReplay: allReplayed,
+      };
     });
   }
 
@@ -329,7 +381,7 @@ export class TruthLeaseLedger {
       ),
       this.database.query<EventRow>(
         `/* ledger.event.list_for_case */ SELECT * FROM truthlease_ledger_events
-         WHERE case_id = $1 ORDER BY received_at ASC, event_id ASC`,
+         WHERE case_id = $1 ORDER BY occurred_at ASC, sequence ASC, event_id ASC`,
         [caseId],
       ),
     ]);
@@ -355,5 +407,46 @@ export class TruthLeaseLedger {
       throw new LedgerError("conflict", "idempotencyKey was already used with different event data.");
     }
     return { value: toEvent(row), idempotentReplay: true };
+  }
+
+  private validateCase(input: CreateLedgerCaseInput): void {
+    assertIdentifier(input.caseId, "caseId");
+    assertIdempotencyKey(input.idempotencyKey);
+    assertLabel(input.caseType, "caseType");
+    canonicalJson(input.subject);
+  }
+
+  private validateRun(input: StartLedgerRunInput): void {
+    assertIdentifier(input.runId, "runId");
+    assertIdentifier(input.caseId, "caseId");
+    assertConnectorIdentifier(input.connectorId);
+    assertIdempotencyKey(input.idempotencyKey);
+  }
+
+  private validateEvent(authentication: VerifiedConnector, input: AppendLedgerEventInput): void {
+    assertIdentifier(input.eventId, "eventId");
+    assertIdentifier(input.caseId, "caseId");
+    assertIdentifier(input.runId, "runId");
+    assertConnectorIdentifier(input.connectorId);
+    assertIdempotencyKey(input.idempotencyKey);
+    assertLabel(input.eventType, "eventType");
+    assertOccurredAt(input.occurredAt);
+    canonicalJson(input.payload);
+    if (!Number.isSafeInteger(input.sequence) || input.sequence < 1) {
+      throw new LedgerError("invalid_input", "sequence must be a positive safe integer.");
+    }
+    if (!isVerifiedConnector(authentication, input.connectorId)) {
+      throw new LedgerError("authentication_failed", "A verified connector credential is required.");
+    }
+  }
+
+  /** PostgreSQL cannot lock an absent unique key; retry after 23505 to classify the winner. */
+  private async transactionWithRaceReplay<T>(operation: (transaction: SqlTransaction) => Promise<T>): Promise<T> {
+    try {
+      return await this.database.transaction(operation);
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      return this.database.transaction(operation);
+    }
   }
 }
