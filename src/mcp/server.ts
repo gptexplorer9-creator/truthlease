@@ -188,16 +188,18 @@ export function createTruthLeaseMcpServer(
     async (input) => {
       try {
         const authorization = await trustGate.authorizeMutation(input);
+        let mutationApplied = false;
         try {
           const result = await store.applyContainmentPatch(input);
+          mutationApplied = true;
+          authorization.commit();
           const enforcedVerification = await store.verifyContainment(input.patch_id);
           if (!enforcedVerification.passed) {
             throw new Error("The containment write did not pass its immediate persisted-state verification.");
           }
-          authorization.commit();
           return jsonResult({ ...result, enforcedVerification });
         } catch (error) {
-          authorization.release();
+          if (!mutationApplied) authorization.release();
           throw error;
         }
       } catch (error) {
