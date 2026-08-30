@@ -79,6 +79,11 @@ export const P0_CPSC_RECALL_URL =
 export const P0_CPSC_FALLBACK_QUERY =
   'site:cpsc.gov/Recalls/2026 "26-719" "2012261001" "0925" HABA Rainbow Rattle';
 
+const TRUEFORGE_EVENT_PAGE_LIMIT = 100;
+const TRUEFORGE_EVENT_MAX_PAGES = 100;
+const TRUEFORGE_EVENT_MAX_EVENTS = TRUEFORGE_EVENT_PAGE_LIMIT * TRUEFORGE_EVENT_MAX_PAGES;
+const TRUEFORGE_PAGE_TOKEN_MAX_LENGTH = 4_096;
+
 function record(value: unknown): UnknownRecord | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as UnknownRecord)
@@ -521,32 +526,66 @@ export async function fetchTrueForgeEvents(
     throw new Error("TrueForge event feed must use an exact credential-free HTTP loopback origin.");
   }
   const expectedOrigin = url.origin;
-  const requestUrl = new URL(
-    `/api/v1/sessions/${encodeURIComponent(sessionId)}/events?limit=100`,
-    `${expectedOrigin}/`,
-  );
-  const response = await fetchImpl(
-    requestUrl,
-    {
-      headers: { accept: "application/json" },
-      redirect: "manual",
-      signal: AbortSignal.timeout(10_000),
-    },
-  );
-  if (response.status >= 300 && response.status < 400) {
-    throw new Error(`TrueForge event request rejected redirect HTTP ${response.status}.`);
+  const endpoint = `/api/v1/sessions/${encodeURIComponent(sessionId)}/events`;
+  const entries: TrueForgeEventEntry[] = [];
+  const seenPageTokens = new Set<string>();
+  let receivedEventCount = 0;
+  let pageToken: string | undefined;
+
+  for (let page = 0; page < TRUEFORGE_EVENT_MAX_PAGES; page += 1) {
+    const requestUrl = new URL(endpoint, `${expectedOrigin}/`);
+    requestUrl.searchParams.set("limit", String(TRUEFORGE_EVENT_PAGE_LIMIT));
+    if (pageToken !== undefined) requestUrl.searchParams.set("page_token", pageToken);
+
+    const response = await fetchImpl(
+      requestUrl,
+      {
+        headers: { accept: "application/json" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(`TrueForge event request rejected redirect HTTP ${response.status}.`);
+    }
+    if (response.url !== "" && new URL(response.url).origin !== expectedOrigin) {
+      throw new Error("TrueForge event response origin did not match the configured loopback origin.");
+    }
+    if (!response.ok) throw new Error(`TrueForge event request failed with HTTP ${response.status}.`);
+
+    const body = record(await response.json());
+    if (body === undefined) throw new Error("TrueForge event response must be a JSON object.");
+    const rawPageEntries = array(body.data);
+    receivedEventCount += rawPageEntries.length;
+    if (receivedEventCount > TRUEFORGE_EVENT_MAX_EVENTS) {
+      throw new Error("TrueForge event feed exceeded the safe event bound.");
+    }
+    const pageEntries = rawPageEntries.flatMap((item) => {
+      const entry = record(item);
+      const event = record(entry?.event);
+      const turnId = string(entry?.turn_id);
+      return event !== undefined && turnId !== undefined ? [{ turn_id: turnId, event }] : [];
+    });
+    entries.push(...pageEntries);
+
+    if (body.page_token === undefined || body.page_token === null || body.page_token === "") {
+      return entries;
+    }
+    if (
+      typeof body.page_token !== "string" ||
+      body.page_token.trim().length === 0 ||
+      body.page_token.length > TRUEFORGE_PAGE_TOKEN_MAX_LENGTH
+    ) {
+      throw new Error("TrueForge event response returned a malformed page_token.");
+    }
+    pageToken = body.page_token;
+    if (seenPageTokens.has(pageToken)) {
+      throw new Error("TrueForge event pagination returned a page_token cycle.");
+    }
+    seenPageTokens.add(pageToken);
   }
-  if (response.url !== "" && new URL(response.url).origin !== expectedOrigin) {
-    throw new Error("TrueForge event response origin did not match the configured loopback origin.");
-  }
-  if (!response.ok) throw new Error(`TrueForge event request failed with HTTP ${response.status}.`);
-  const body = record(await response.json());
-  return array(body?.data).flatMap((item) => {
-    const entry = record(item);
-    const event = record(entry?.event);
-    const turnId = string(entry?.turn_id);
-    return event !== undefined && turnId !== undefined ? [{ turn_id: turnId, event }] : [];
-  });
+
+  throw new Error("TrueForge event feed exceeded the safe page bound before pagination completed.");
 }
 
 export function buildCaseEventFeed(
