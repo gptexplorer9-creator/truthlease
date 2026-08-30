@@ -391,7 +391,7 @@ function renderProof(model: CaseViewModel): string {
   return `<section class="stage" id="proof" aria-labelledby="proof-title">
     ${sectionHeader(2, "Deterministic proof", stage.status, "Exact item + batch / sandbox output")}
     <div class="rule-banner"><span class="rule-banner__operator">AND</span><p>Contain only records where <code>item_number = ${display(item)}</code> and <code>batch_code = ${display(batch)}</code>.</p></div>
-    <div class="proof-verdict" aria-label="Deterministic match result">
+    <div class="proof-verdict" role="group" aria-label="Deterministic match result">
       <div><span class="proof-verdict__value">${exact ? "1" : "0"}</span><span><strong>Exact match</strong><small>Item and batch both match</small></span></div>
       <div><span class="proof-verdict__value">${exclusions.length}</span><span><strong>Near matches excluded</strong><small>Different fields stay visible below</small></span></div>
       <p>No probability and no model judgment authorizes this result.</p>
@@ -400,7 +400,7 @@ function renderProof(model: CaseViewModel): string {
       ${exact ? matchRow(exact, "exact") : `<p class="notice notice--danger">The completed analysis did not supply its exact match.</p>`}
       ${exclusions.map((entry) => matchRow(entry, "excluded")).join("") || `<p class="notice notice--warning">No excluded near matches were supplied.</p>`}
     </div>
-    <div class="sandbox" aria-label="Sandbox result">
+    <div class="sandbox" role="group" aria-label="Sandbox result">
       <div class="sandbox__bar"><span>Sandbox output</span><span>${display(provider)}${runId ? ` / ${display(runId)}` : ""}</span></div>
       <pre><code>${display(output, "No sandbox output supplied.")}</code></pre>
     </div>
@@ -433,7 +433,7 @@ function renderApproval(model: CaseViewModel, runtime: NormalizedRuntimeState): 
   } else if (request && !resolution) {
     stateCopy = `<div class="approval-airlock">
       <span class="approval-airlock__lock" aria-hidden="true">HOLD</span>
-      <div><p class="eyebrow">Human control point / 0 writes</p><h3>Execution is paused for genuine TrueForge approval</h3><p>No retailer state changes while this case is pending. Review the immutable action and exact arguments below, then choose inside TrueForge's native approval UI.</p><div class="approval-choices" aria-label="Decisions available in TrueForge"><span>Approve exact patch in TrueForge</span><span>Deny in TrueForge</span></div></div>
+      <div><p class="eyebrow">Human control point / 0 writes</p><h3>Execution is paused for genuine TrueForge approval</h3><p>No retailer state changes while this case is pending. Review the immutable action and exact arguments below, then choose inside TrueForge's native approval UI.</p><div class="approval-choices" role="group" aria-label="Decisions available in TrueForge"><span>Approve exact patch in TrueForge</span><span>Deny in TrueForge</span></div></div>
       ${targetInfo.href ? `<a class="button" data-ui-key="approval-target" href="${escapeHtml(targetInfo.href)}" target="_blank" rel="noopener noreferrer">Open genuine TrueForge approval<span class="sr-only"> in a new tab</span></a>` : `<p class="target-missing">${targetInfo.blocked ? "This hosted read-only shell cannot open a local TrueForge approval target. Use the native local session instead." : "No verified TrueForge approval target was supplied. Open the native TrueForge session directly."}</p>`}
     </div>`;
   } else if (resolution && stage.status === "denied") {
@@ -481,7 +481,7 @@ function renderPatch(model: CaseViewModel): string {
     ${replay ? `<div class="notice notice--info"><strong>Idempotent replay</strong><p>The same patch ID returned its existing receipt. No second mutation was applied.</p></div>` : ""}
     <div class="receipt-card">
       <div class="receipt-card__title"><p class="eyebrow">Atomic patch receipt</p><h3>${display(patchId)}</h3></div>
-      <div class="patch-diff" aria-label="Approved before and after state">
+      <div class="patch-diff" role="group" aria-label="Approved before and after state">
         <div class="patch-diff__header"><span>Object</span><span>Before</span><span>After</span></div>
         <div><strong>${display(firstString(lease, "lease_id", "leaseId", "id"))}</strong><code>${display(priorLeaseStatus)}</code><code>${display(nextLeaseStatus)}</code></div>
         <div><strong>${display(firstString(listing, "listing_id", "listingId", "id"))}</strong><code>${display(priorListingStatus)}</code><code>${display(nextListingStatus)}</code></div>

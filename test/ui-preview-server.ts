@@ -8,6 +8,19 @@ const app = express();
 const projectRoot = resolve(process.cwd());
 const port = 4179;
 
+app.get("/api/cases", (_request, response) => {
+  response.json({
+    cases: [
+      {
+        caseId: "TL-042",
+        caseType: "recall_containment",
+        subject: "HABA Rainbow Rattle / ITEM-8831 / LISTING-1001",
+        createdAt: "2026-08-29T20:00:00.000Z",
+      },
+    ],
+  });
+});
+
 app.get("/api/cases/:leaseId/events", (request, response) => {
   const pending = request.params.leaseId === "TL-PENDING";
   const sourceFeed = completeFeed();

@@ -1841,8 +1841,10 @@ h3 {
   --rule: #e9e9e9;
   --rule-strong: #cfcfcf;
   --brand: #088177;
+  --brand-text: #066a63;
   --brand-tint: #eff8f6;
   --verified: #088177;
+  --verified-text: #066a63;
   --verified-bg: #eff8f6;
   --focus: #0969da;
   --radius-sm: 4px;
@@ -2920,8 +2922,30 @@ select:focus-visible {
 }
 
 .patch-diff > div:not(.patch-diff__header) > code:last-child {
-  color: var(--verified);
+  color: var(--verified-text);
   font-weight: 700;
+}
+
+.console-nav__label {
+  color: #5f6265;
+}
+
+.console-system summary,
+.refresh-button,
+.case-table__link,
+.case-table__action a,
+.causal-strip__number,
+.proof-verdict__value {
+  color: var(--brand-text);
+}
+
+.status--complete,
+.stage-rail__item--complete .stage-rail__number,
+.stage-rail__item--complete small,
+.match--exact .match__marker,
+.checkmark,
+.mini-stage--complete small {
+  color: var(--verified-text);
 }
 
 .console-nav__link,
