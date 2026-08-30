@@ -187,12 +187,93 @@ function qualifyingEntries(): TrueForgeEventEntry[] {
   ];
 }
 
+function successfulScrapeEntries(): TrueForgeEventEntry[] {
+  const entries = qualifyingEntries().filter((entry) =>
+    entry.event.id !== "event-2" && entry.event.id !== "event-3"
+  );
+  const recordCall = (entries.find((entry) => entry.event.id === "event-4")!.event.tool_calls as Array<{
+    function: { arguments: string };
+  }>)[0]!;
+  const wire = JSON.parse(recordCall.function.arguments) as Record<string, string>;
+  const markdown = [
+    `# ${wire.title}`,
+    wire.description,
+    `Product: ${wire.product_name}`,
+    `Recall date: ${wire.recall_date}`,
+    `Hazard: ${wire.hazard}`,
+    `Recall number: ${wire.recall_number}`,
+    `Item number: ${wire.item_number}`,
+    `Batch code: ${wire.batch_code}`,
+  ].join("\n");
+  entries.find((entry) => entry.event.id === "event-1")!.event.content =
+    `=====UNTRUSTED_EXTERNAL_DATA_BEGIN=====\n${markdown}\n=====UNTRUSTED_EXTERNAL_DATA_END=====`;
+  recordCall.function.arguments = JSON.stringify({ ...wire, evidence_text: markdown });
+  return entries;
+}
+
 describe("TrueForge case feed", () => {
   it("unwraps MCP result envelopes and verifies real sandbox event order", () => {
     const verification = verifyP0SessionEvents(sessionId, qualifyingEntries());
 
     expect(verification.passed).toBe(true);
     expect(verification.checks.every((check) => check.passed)).toBe(true);
+  });
+
+  it("qualifies a successful canonical Bright Data scrape without requiring fallback search", () => {
+    const entries = successfulScrapeEntries();
+    const recordCall = (entries.find((entry) => entry.event.id === "event-4")!.event.tool_calls as Array<{
+      function: { arguments: string };
+    }>)[0]!;
+    const wire = JSON.parse(recordCall.function.arguments) as Record<string, string>;
+    const input: RecordRecallEvidenceInput = {
+      sourceUrl: wire.source_url!,
+      retrievedAt: wire.retrieved_at!,
+      recallNumber: wire.recall_number!,
+      title: wire.title!,
+      productName: wire.product_name!,
+      recallDate: wire.recall_date!,
+      hazard: wire.hazard!,
+      description: wire.description!,
+      itemNumber: wire.item_number!,
+      batchCode: wire.batch_code!,
+      evidenceText: wire.evidence_text!,
+    };
+
+    const verification = verifyP0SessionEvents(sessionId, entries);
+
+    expect(verification.passed).toBe(true);
+    expect(verification.checks[0]?.observed).toMatchObject({
+      mode: "scrape",
+      searchCallId: null,
+    });
+    expect(verifyTrueForgeEvidenceAuthorization(entries, input)?.callId).toBe("record");
+  });
+
+  it("rejects forged successful-scrape evidence and mismatched Bright Data provenance", () => {
+    const forged = successfulScrapeEntries();
+    const forgedRecordCall = (forged.find((entry) => entry.event.id === "event-4")!.event.tool_calls as Array<{
+      function: { arguments: string };
+    }>)[0]!;
+    const forgedWire = JSON.parse(forgedRecordCall.function.arguments) as Record<string, string>;
+    forgedRecordCall.function.arguments = JSON.stringify({
+      ...forgedWire,
+      evidence_text: `${forgedWire.evidence_text}\nForged unsupported statement`,
+    });
+    expect(verifyP0SessionEvents(sessionId, forged).passed).toBe(false);
+
+    const wrongServer = successfulScrapeEntries();
+    const scrapeCall = (wrongServer.find((entry) => entry.event.id === "event-0")!.event.tool_calls as Array<{
+      tool_info: { server_name: string };
+    }>)[0]!;
+    scrapeCall.tool_info.server_name = "forged-bright-data";
+    expect(verifyP0SessionEvents(sessionId, wrongServer).passed).toBe(false);
+
+    const wrongUrl = successfulScrapeEntries();
+    const wrongUrlCall = (wrongUrl.find((entry) => entry.event.id === "event-0")!.event.tool_calls as Array<{
+      function: { arguments: string };
+    }>)[0]!;
+    wrongUrlCall.function.arguments = JSON.stringify({ url: "https://example.invalid/recall" });
+    expect(verifyP0SessionEvents(sessionId, wrongUrl).passed).toBe(false);
   });
 
   it("maps wrapped evidence, patch, and verification responses", () => {

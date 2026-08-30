@@ -53,10 +53,11 @@ interface IndexedEvent {
 }
 
 interface EvidenceTrace {
+  mode: "scrape" | "fallback_search";
   scrape: IndexedToolCall;
   scrapeResponse: IndexedEvent;
-  search: IndexedToolCall;
-  searchResponse: IndexedEvent;
+  search?: IndexedToolCall;
+  searchResponse?: IndexedEvent;
   recordEvidence: IndexedToolCall;
   input: RecordRecallEvidenceInput;
 }
@@ -140,14 +141,17 @@ function normalizedEvidenceText(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-function emptyExternalPayload(event: UnknownRecord): boolean {
+function externalPayload(event: UnknownRecord): string {
   const content = string(event.content) ?? "";
   const begin = content.indexOf("_BEGIN=====");
   const end = content.lastIndexOf("=====UNTRUSTED_");
-  const payload = begin >= 0 && end > begin
+  return begin >= 0 && end > begin
     ? content.slice(begin + "_BEGIN=====".length, end).trim()
     : content.trim();
-  return payload.length === 0;
+}
+
+function emptyExternalPayload(event: UnknownRecord): boolean {
+  return externalPayload(event).length === 0;
 }
 
 function recordEvidenceInput(arguments_: UnknownRecord): RecordRecallEvidenceInput | undefined {
@@ -243,7 +247,29 @@ function findSandboxTrace(entries: TrueForgeEventEntry[]): SandboxTrace | undefi
   return undefined;
 }
 
-function evidenceMetadataIsBound(input: RecordRecallEvidenceInput, searchPayload: UnknownRecord): boolean {
+function evidenceIdentifiersAreBound(input: RecordRecallEvidenceInput, payload: unknown): boolean {
+  const boundText = normalizedEvidenceText(
+    `${typeof payload === "string" ? payload : JSON.stringify(payload)} ${P0_CPSC_RECALL_URL.replace(/[-_/]/g, " ")}`,
+  );
+  return [
+    input.recallNumber,
+    input.title,
+    input.productName,
+    input.recallDate,
+    input.hazard,
+    input.description,
+    input.itemNumber,
+    input.batchCode,
+  ].map(normalizedEvidenceText).every((value) => value.length > 0 && boundText.includes(value));
+}
+
+function scrapeEvidenceIsBound(input: RecordRecallEvidenceInput, scrapePayload: string): boolean {
+  return scrapePayload.length > 0 &&
+    input.evidenceText === scrapePayload &&
+    evidenceIdentifiersAreBound(input, scrapePayload);
+}
+
+function fallbackEvidenceIsBound(input: RecordRecallEvidenceInput, searchPayload: UnknownRecord): boolean {
   const organic = array(searchPayload.organic).map(record).find((item) =>
     string(item?.link) === P0_CPSC_RECALL_URL,
   );
@@ -254,17 +280,7 @@ function evidenceMetadataIsBound(input: RecordRecallEvidenceInput, searchPayload
   ) return false;
   const submittedPayload = parseJsonObject(input.evidenceText);
   if (submittedPayload === undefined || !equalJson(submittedPayload, searchPayload)) return false;
-  const boundText = normalizedEvidenceText(
-    `${JSON.stringify(searchPayload)} ${P0_CPSC_RECALL_URL.replace(/[-_/]/g, " ")}`,
-  );
-  return [
-    input.recallNumber,
-    input.productName,
-    input.recallDate,
-    input.hazard,
-    input.itemNumber,
-    input.batchCode,
-  ].every((value) => boundText.includes(normalizedEvidenceText(value)));
+  return evidenceIdentifiersAreBound(input, searchPayload);
 }
 
 function findEvidenceTrace(
@@ -296,9 +312,26 @@ function findEvidenceTrace(
       if (
         scrapeResponse === undefined ||
         errorMessage(scrapeResponse.event) !== undefined ||
-        !emptyExternalPayload(scrapeResponse.event) ||
-        scrapeResponse.eventIndex <= scrape.eventIndex
+        scrapeResponse.eventIndex <= scrape.eventIndex ||
+        scrapeResponse.eventIndex >= recordCall.eventIndex
       ) continue;
+      const scrapePayload = externalPayload(scrapeResponse.event);
+      const retrievedAt = Date.parse(input.retrievedAt);
+      const scrapeObservedAt = Date.parse(createdAt(scrapeResponse.event));
+      if (
+        scrapeEvidenceIsBound(input, scrapePayload) &&
+        Number.isFinite(retrievedAt) && Number.isFinite(scrapeObservedAt) &&
+        Math.abs(retrievedAt - scrapeObservedAt) <= 120_000
+      ) {
+        return {
+          mode: "scrape",
+          scrape,
+          scrapeResponse,
+          recordEvidence: recordCall,
+          input,
+        };
+      }
+      if (!emptyExternalPayload(scrapeResponse.event)) continue;
       const searches = calls.filter((call) =>
         call.serverName === "bright-data" &&
         call.name === "search_engine" &&
@@ -325,9 +358,17 @@ function findEvidenceTrace(
           searchResponse.eventIndex >= recordCall.eventIndex ||
           !Number.isFinite(retrievedAt) || !Number.isFinite(searchObservedAt) ||
           Math.abs(retrievedAt - searchObservedAt) > 120_000 ||
-          !evidenceMetadataIsBound(input, searchPayload)
+          !fallbackEvidenceIsBound(input, searchPayload)
         ) continue;
-        return { scrape, scrapeResponse, search, searchResponse, recordEvidence: recordCall, input };
+        return {
+          mode: "fallback_search",
+          scrape,
+          scrapeResponse,
+          search,
+          searchResponse,
+          recordEvidence: recordCall,
+          input,
+        };
       }
     }
   }
@@ -471,13 +512,33 @@ export async function fetchTrueForgeEvents(
   fetchImpl: typeof fetch = fetch,
 ): Promise<TrueForgeEventEntry[]> {
   const url = new URL(baseUrl);
-  if (!(["127.0.0.1", "localhost"] as string[]).includes(url.hostname)) {
-    throw new Error("TrueForge event feed must use a loopback origin.");
+  if (
+    url.protocol !== "http:" ||
+    !(["127.0.0.1", "localhost", "[::1]"] as string[]).includes(url.hostname) ||
+    url.username !== "" || url.password !== "" ||
+    url.pathname !== "/" || url.search !== "" || url.hash !== ""
+  ) {
+    throw new Error("TrueForge event feed must use an exact credential-free HTTP loopback origin.");
   }
-  const response = await fetchImpl(
-    new URL(`/api/v1/sessions/${encodeURIComponent(sessionId)}/events?limit=100`, url),
-    { headers: { accept: "application/json" }, signal: AbortSignal.timeout(10_000) },
+  const expectedOrigin = url.origin;
+  const requestUrl = new URL(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/events?limit=100`,
+    `${expectedOrigin}/`,
   );
+  const response = await fetchImpl(
+    requestUrl,
+    {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(`TrueForge event request rejected redirect HTTP ${response.status}.`);
+  }
+  if (response.url !== "" && new URL(response.url).origin !== expectedOrigin) {
+    throw new Error("TrueForge event response origin did not match the configured loopback origin.");
+  }
   if (!response.ok) throw new Error(`TrueForge event request failed with HTTP ${response.status}.`);
   const body = record(await response.json());
   return array(body?.data).flatMap((item) => {
@@ -836,12 +897,21 @@ export function verifyP0SessionEvents(
     "evidenceReceiptId",
     "analysisSha256",
   ];
+  const evidenceChronology = evidenceTrace?.mode === "fallback_search"
+    ? [
+        evidenceTrace.scrape.eventIndex,
+        evidenceTrace.scrapeResponse.eventIndex,
+        evidenceTrace.search?.eventIndex ?? -1,
+        evidenceTrace.searchResponse?.eventIndex ?? -1,
+        recordEvidence?.eventIndex ?? -1,
+      ]
+    : [
+        evidenceTrace?.scrape.eventIndex ?? -1,
+        evidenceTrace?.scrapeResponse.eventIndex ?? -1,
+        recordEvidence?.eventIndex ?? -1,
+      ];
   const chronology = [
-    evidenceTrace?.scrape.eventIndex ?? -1,
-    evidenceTrace?.scrapeResponse.eventIndex ?? -1,
-    evidenceTrace?.search.eventIndex ?? -1,
-    evidenceTrace?.searchResponse.eventIndex ?? -1,
-    recordEvidence?.eventIndex ?? -1,
+    ...evidenceChronology,
     recordResponse?.eventIndex ?? -1,
     leaseRead?.call.eventIndex ?? -1,
     leaseRead?.response?.eventIndex ?? -1,
@@ -859,15 +929,16 @@ export function verifyP0SessionEvents(
   ];
   const checks: P0VerificationCheck[] = [
     {
-      name: "Bright Data used the canonical scrape and only then the exact fallback search",
+      name: "Bright Data used the canonical scrape or its exact empty-scrape fallback search",
       passed: evidenceTrace !== undefined,
       observed: evidenceTrace === undefined
         ? null
         : {
             scrapeCallId: evidenceTrace.scrape.id,
             url: evidenceTrace.scrape.arguments.url,
-            searchCallId: evidenceTrace.search.id,
-            query: evidenceTrace.search.arguments.query,
+            mode: evidenceTrace.mode,
+            searchCallId: evidenceTrace.search?.id ?? null,
+            query: evidenceTrace.search?.arguments.query ?? null,
           },
     },
     {
