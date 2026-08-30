@@ -9,7 +9,13 @@ describe("ledger migration", () => {
     expect(sql).toContain("truthlease_ledger_runs");
     expect(sql).toContain("truthlease_ledger_events");
     expect(sql).toContain("UNIQUE (run_id, sequence)");
+    expect(sql).toContain("SET occurred_at = received_at WHERE occurred_at IS NULL");
+    expect(sql).not.toContain("occurred_at TIMESTAMPTZ NOT NULL DEFAULT now()");
     expect(sql).toContain("UNIQUE (run_id, idempotency_key)");
-    expect(sql).not.toMatch(/\bDELETE FROM\b|\bUPDATE truthlease_ledger_events\b/i);
+    const compatibilityBackfill =
+      "UPDATE truthlease_ledger_events SET occurred_at = received_at WHERE occurred_at IS NULL";
+    const remainingSql = sql.replace(compatibilityBackfill, "");
+    expect(remainingSql).not.toContain("DELETE FROM");
+    expect(remainingSql).not.toContain("UPDATE truthlease_ledger_events");
   });
 });

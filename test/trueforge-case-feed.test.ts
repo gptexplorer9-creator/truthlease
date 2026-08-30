@@ -274,11 +274,13 @@ describe("TrueForge case feed", () => {
       ...evidenceInput,
       batchCode: "9999",
     })).toBeUndefined();
-    expect(verifyTrueForgeMutationAuthorization(entries, mutationInput)?.callId).toBe("apply");
-    expect(verifyTrueForgeMutationAuthorization(entries, {
+    const pendingEntries = entries.slice(0, 16);
+    expect(verifyTrueForgeMutationAuthorization(pendingEntries, mutationInput)?.callId).toBe("apply");
+    expect(verifyTrueForgeMutationAuthorization(pendingEntries, {
       ...mutationInput,
       expected_version: 99,
     })).toBeUndefined();
+    expect(verifyTrueForgeMutationAuthorization(entries, mutationInput)).toBeUndefined();
   });
 
   it("prefers the newest complete duplicate evidence call and skips a later incomplete candidate", () => {
@@ -408,7 +410,7 @@ describe("TrueForge case feed", () => {
   });
 
   it("uses a fresh approved mutation retry when the consumed proof is stale", async () => {
-    const entries = qualifyingEntries();
+    const entries = qualifyingEntries().slice(0, 16);
     const applyCall = (entries[13]!.event.tool_calls as Array<{
       function: { arguments: string };
     }>)[0]!;
@@ -431,6 +433,7 @@ describe("TrueForge case feed", () => {
     const originalAuthorization = await gate.authorizeMutation(mutationInput);
     originalAuthorization.commit();
     entries.push(
+      response(16, "apply", { completed: true }),
       call(100, "apply-retry", "apply_containment_patch", { ...mutationInput }, "truthlease-local"),
       event(101, {
         type: "tool.approval_required",
@@ -451,6 +454,31 @@ describe("TrueForge case feed", () => {
     retryAuthorization.commit();
     expect(verifyTrueForgeMutationAuthorization(entries, mutationInput)?.callId).toBe(
       "apply-retry",
+    );
+  });
+
+  it("does not reuse a completed approved mutation after a trust-gate restart", async () => {
+    const entries = qualifyingEntries();
+    const applyCall = (entries[13]!.event.tool_calls as Array<{
+      function: { arguments: string };
+    }>)[0]!;
+    const mutationInput = JSON.parse(
+      applyCall.function.arguments,
+    ) as ApplyContainmentPatchArguments;
+    const fetchImpl: typeof fetch = async () => new Response(
+      JSON.stringify({ data: entries }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+    const restartedGate = new TrueForgeSessionTrustGate(
+      "http://127.0.0.1:8790",
+      sessionId,
+      fetchImpl,
+      () => new Date(16_500),
+      10_000,
+    );
+
+    await expect(restartedGate.authorizeMutation(mutationInput)).rejects.toThrow(
+      "No fresh, unused native TrueForge approval",
     );
   });
 });

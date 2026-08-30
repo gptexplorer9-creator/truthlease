@@ -350,11 +350,12 @@ export function verifyTrueForgeMutationAuthorization(
   input: ApplyContainmentPatchArguments,
   excludedCallIds: ReadonlySet<string> = new Set(),
 ): TrueForgeAuthorizationProof | undefined {
-  const { ordered, calls } = orderedTrace(entries);
+  const { ordered, calls, responses } = orderedTrace(entries);
   const applyCandidates = calls.filter((call) =>
     call.name === "apply_containment_patch" &&
     call.serverName === "truthlease-local" &&
     !excludedCallIds.has(call.id) &&
+    !responses.has(call.id) &&
     equalJson(call.arguments, input),
   ).reverse();
   for (const apply of applyCandidates) {

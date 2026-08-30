@@ -46,7 +46,9 @@ export const ledgerMigrationStatements = [
     UNIQUE (run_id, sequence),
     UNIQUE (run_id, idempotency_key)
   )`,
-  `ALTER TABLE truthlease_ledger_events ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+  `ALTER TABLE truthlease_ledger_events ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ`,
+  `UPDATE truthlease_ledger_events SET occurred_at = received_at WHERE occurred_at IS NULL`,
+  `ALTER TABLE truthlease_ledger_events ALTER COLUMN occurred_at SET NOT NULL`,
   `ALTER TABLE truthlease_ledger_events ALTER COLUMN occurred_at DROP DEFAULT`,
   `CREATE INDEX IF NOT EXISTS truthlease_ledger_events_case_occurred_idx
     ON truthlease_ledger_events (case_id, occurred_at ASC, sequence ASC, event_id ASC)`,
